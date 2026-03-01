@@ -1,5 +1,46 @@
 # Pactolus
 
+Clean baseline for local infrastructure setup.
+
+## Local Postgres Setup
+
+1) Start Postgres
+
+```bash
+docker compose up -d
+```
+
+2) Check status
+
+```bash
+docker compose ps
+```
+
+3) Test connection
+
+```bash
+docker compose exec postgres psql -U pactolus -d pactolus -c "select now();"
+```
+
+4) Copy env template
+
+```bash
+cp .env.example .env
+```
+
+5) Stop Postgres
+
+```bash
+docker compose down
+```
+
+6) Reset Postgres data
+
+```bash
+docker compose down -v
+```
+# Pactolus
+
 Pactolus is a web-based, multi-tenant transaction comps engine for finance teams.
 
 ## Monorepo Layout
@@ -82,6 +123,14 @@ docker compose -f infra/docker/docker-compose.yml down
 docker compose -f infra/docker/docker-compose.yml down -v
 ```
 
+Migration hygiene reset (fresh local baseline):
+
+```bash
+corepack pnpm db:reset-local
+corepack pnpm --filter @pactolus/db db:migrate
+corepack pnpm --filter @pactolus/db db:seed
+```
+
 ## Running Services
 
 Start API:
@@ -118,4 +167,7 @@ corepack pnpm --filter @pactolus/db db:generate
 
 # Open Drizzle Studio
 corepack pnpm --filter @pactolus/db db:studio
+
+# Snapshot vertical-slice smoke test
+corepack pnpm --filter @pactolus/api smoke:snapshots
 ```
