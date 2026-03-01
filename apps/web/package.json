@@ -1,0 +1,11 @@
+{
+  "name": "@pactolus/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node -e \"console.log('apps/web scaffolded. Next step: initialize Next.js app.')\"",
+    "build": "node -e \"console.log('apps/web build placeholder')\"",
+    "lint": "node -e \"console.log('apps/web lint placeholder')\"",
+    "typecheck": "node -e \"console.log('apps/web typecheck placeholder')\""
+  }
+}
