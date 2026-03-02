@@ -8,15 +8,26 @@
     "db:down": "docker compose down",
     "db:reset": "docker compose down -v && docker compose up -d",
     "db:ps": "docker compose ps",
-    "db:test": "docker compose exec postgres psql -U pactolus -d pactolus -c \"select now();\""
+    "db:test": "docker compose exec postgres psql -U pactolus -d pactolus -c \"select now();\"",
+    "db:generate": "drizzle-kit generate --config=packages/db/src/drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config=packages/db/src/drizzle.config.ts",
+    "db:seed": "tsx packages/db/src/seed.ts",
+    "api:dev": "tsx apps/api/src/index.ts"
   },
   "dependencies": {
+    "@trpc/server": "^11.11.0",
+    "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
-    "pg": "^8.19.0"
+    "express": "^5.2.1",
+    "pg": "^8.19.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^25.3.3",
+    "@types/pg": "^8.18.0",
     "drizzle-kit": "^0.31.9",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
