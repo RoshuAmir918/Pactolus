@@ -10,7 +10,7 @@ export type IngestSnapshotWorkflowInput = {
 };
 
 export type IngestSnapshotWorkflowResult = {
-  status: "completed" | "failed";
+  status: "awaiting_confirmation" | "completed" | "failed";
   snapshotId: string;
   snapshotInputId: string;
   mappingRunId?: string;
@@ -31,14 +31,29 @@ const {
   },
 });
 
-export async function ingestSnapshotWorkflow(
+export async function proposeMappingWorkflow(
   input: IngestSnapshotWorkflowInput,
 ): Promise<IngestSnapshotWorkflowResult> {
   const { mappingRunId } = await proposeMappingActivity(input);
 
+  return {
+    status: "awaiting_confirmation",
+    snapshotId: input.snapshotId,
+    snapshotInputId: input.snapshotInputId,
+    mappingRunId,
+  };
+}
+
+export type RunCanonicalizationWorkflowInput = IngestSnapshotWorkflowInput & {
+  mappingRunId: string;
+};
+
+export async function runCanonicalizationWorkflow(
+  input: RunCanonicalizationWorkflowInput,
+): Promise<IngestSnapshotWorkflowResult> {
   const validation = await validateMappingActivity({
     ...input,
-    mappingRunId,
+    requireConfirmedMapping: true,
   });
 
   if (!validation.isValid) {
@@ -46,20 +61,19 @@ export async function ingestSnapshotWorkflow(
       status: "failed",
       snapshotId: input.snapshotId,
       snapshotInputId: input.snapshotInputId,
-      mappingRunId,
+      mappingRunId: input.mappingRunId,
       reason: "Mapping validation failed",
     };
   }
 
   await canonicalizeActivity({
     ...input,
-    mappingRunId,
   });
 
   return {
     status: "completed",
     snapshotId: input.snapshotId,
     snapshotInputId: input.snapshotInputId,
-    mappingRunId,
+    mappingRunId: input.mappingRunId,
   };
 }

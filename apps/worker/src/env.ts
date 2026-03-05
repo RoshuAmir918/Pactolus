@@ -8,6 +8,8 @@ const envSchema = z.object({
   TEMPORAL_ADDRESS: z.string().default("localhost:7233"),
   TEMPORAL_NAMESPACE: z.string().default("default"),
   TEMPORAL_TASK_QUEUE: z.string().default("pactolus-ingestion"),
+  TEMPORAL_INGESTION_TASK_QUEUE: z.string().optional(),
+  TEMPORAL_RECONCILIATION_TASK_QUEUE: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

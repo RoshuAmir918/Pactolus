@@ -1,10 +1,11 @@
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { mappingRuns, rawRows } from "@db/schema";
+import { mappingRuns, rawRows, snapshotInputs, snapshots } from "@db/schema";
 import { db } from "../../../db/client";
 import { env } from "../../../env";
 import type { IngestSnapshotWorkflowInput } from "../../workflows/ingestSnapshot";
 import type { ProposeMappingResult } from "./types";
+import { getCanonicalPromptFields, getEntityPromptConfig } from "./canonicalMetadata";
 
 const mappingProposalSchema = z.object({
   entityType: z.enum(["claim", "policy"]),
@@ -17,35 +18,6 @@ const mappingProposalSchema = z.object({
     }),
   ),
 });
-
-const canonicalClaimsFields = {
-  required: ["claim_number", "accident_date", "total_incurred"],
-  optional: [
-    "accounting_period",
-    "evaluation_date",
-    "policy_number",
-    "paid_indemnity",
-    "paid_medical",
-    "paid_expense",
-    "os_indemnity",
-    "os_medical",
-    "os_expense",
-    "line_of_business",
-    "cedent",
-    "profit_center",
-  ],
-};
-
-const canonicalPolicyFields = {
-  required: ["policy_number", "effective_date", "expiration_date"],
-  optional: [
-    "insured_name",
-    "line_of_business",
-    "attachment_point",
-    "gross_premium",
-    "risk_state",
-  ],
-};
 
 function stripCodeFence(input: string): string {
   const trimmed = input.trim();
@@ -85,6 +57,16 @@ function collectColumnSamples(rows: Record<string, unknown>[]): Record<string, s
 export async function proposeMappingActivity(
   input: IngestSnapshotWorkflowInput,
 ): Promise<ProposeMappingResult> {
+  await db
+    .update(snapshotInputs)
+    .set({ status: "ingesting", updatedAt: new Date() })
+    .where(eq(snapshotInputs.id, input.snapshotInputId));
+
+  await db
+    .update(snapshots)
+    .set({ status: "ingesting", updatedAt: new Date() })
+    .where(eq(snapshots.id, input.snapshotId));
+
   const rows = await db
     .select({
       rawJson: rawRows.rawJson,
@@ -111,13 +93,23 @@ export async function proposeMappingActivity(
       })
       .returning({ id: mappingRuns.id });
 
+    await db
+      .update(snapshotInputs)
+      .set({ status: "failed", updatedAt: new Date() })
+      .where(eq(snapshotInputs.id, input.snapshotInputId));
+
+    await db
+      .update(snapshots)
+      .set({ status: "failed", updatedAt: new Date() })
+      .where(eq(snapshots.id, input.snapshotId));
+
     return { mappingRunId: createdEmpty.id };
   }
 
   const samplesByColumn = collectColumnSamples(parsedRows);
   const detectedColumns = Object.keys(samplesByColumn);
-  const canonicalFields =
-    input.entityType === "claim" ? canonicalClaimsFields : canonicalPolicyFields;
+  const canonicalFields = getCanonicalPromptFields(input.entityType);
+  const promptConfig = getEntityPromptConfig(input.entityType);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -132,8 +124,7 @@ export async function proposeMappingActivity(
       messages: [
         {
           role: "system",
-          content:
-            "You map CSV columns into canonical reinsurance fields. Return JSON only. Do not include markdown.",
+          content: `${promptConfig.systemPrompt} Do not include markdown.`,
         },
         {
           role: "user",
@@ -145,6 +136,7 @@ export async function proposeMappingActivity(
                 "Use allowed transforms only: identity, sum, parseDate, parseMoney",
                 "Map all required fields",
                 "Confidence must be between 0 and 1",
+                ...promptConfig.domainRules,
               ],
               entityType: input.entityType,
               detectedColumns,
@@ -195,6 +187,11 @@ export async function proposeMappingActivity(
       status: "pending",
     })
     .returning({ id: mappingRuns.id });
+
+  await db
+    .update(snapshotInputs)
+    .set({ status: "pending", updatedAt: new Date() })
+    .where(eq(snapshotInputs.id, input.snapshotInputId));
 
   return {
     mappingRunId: created.id,

@@ -10,7 +10,8 @@
     "baseUrl": ".",
     "paths": {
       "@api/*": ["apps/api/src/*"],
-      "@db/*": ["packages/db/src/*"]
+      "@db/*": ["packages/db/src/*"],
+      "@worker/*": ["apps/worker/src/*"]
     }
   },
   "include": ["apps/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts"]

@@ -6,6 +6,7 @@ export type ProposeMappingResult = {
 
 export type ValidateMappingInput = IngestSnapshotWorkflowInput & {
   mappingRunId: string;
+  requireConfirmedMapping?: boolean;
 };
 
 export type ValidateMappingResult = {

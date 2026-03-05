@@ -12,9 +12,11 @@
     "db:generate": "drizzle-kit generate --config=packages/db/src/drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config=packages/db/src/drizzle.config.ts",
     "db:seed": "tsx packages/db/src/seed.ts",
-    "api:dev": "tsx apps/api/src/index.ts"
+    "api:dev": "tsx apps/api/src/index.ts",
+    "worker:dev": "tsx apps/worker/src/index.ts"
   },
   "dependencies": {
+    "@temporalio/client": "^1.11.7",
     "@trpc/server": "^11.11.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",

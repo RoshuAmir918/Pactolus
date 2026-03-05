@@ -1,9 +1,13 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { and, eq } from "drizzle-orm";
 import dbClient from "@api/db/client";
-import { snapshots } from "@db/schema";
-import { eq } from "drizzle-orm";
+import { mappingRuns, snapshotInputs, snapshots } from "@db/schema";
 import { publicProcedure, router } from "@api/trpc/base";
+import {
+    startProposeMappingWorkflow,
+    startRunCanonicalizationWorkflow,
+} from "@worker/temporal/client";
 import {
     persistCsvUpload,
     type PersistCsvUploadResult,
@@ -53,6 +57,28 @@ const uploadBatchCsvOutputSchema = z.object({
     uploads: z.array(uploadCsvOutputSchema),
 });
 
+const confirmMappingInputSchema = z.object({
+    mappingRunId: z.uuid(),
+    validatedMappingJson: z
+        .object({
+            entityType: z.enum(["claim", "policy"]),
+            mappings: z.array(
+                z.object({
+                    canonicalField: z.string(),
+                    sourceColumns: z.array(z.string()),
+                    transform: z.enum(["identity", "sum", "parseDate", "parseMoney"]),
+                    confidence: z.number().optional(),
+                }),
+            ),
+        })
+        .optional(),
+});
+
+const confirmMappingOutputSchema = z.object({
+    workflowId: z.string(),
+    runId: z.string(),
+});
+
 function resolveEntityTypeForFile(file: z.infer<typeof batchUploadFileSchema>): UploadEntityType {
     // AI classification will be added here later.
     if (!file.entityType) {
@@ -86,28 +112,44 @@ export const ingestionRouter = router({
     uploadClaimsCsv: publicProcedure
         .input(uploadCsvInputSchema)
         .output(uploadCsvOutputSchema)
-        .mutation(async ({ ctx, input }) =>
-            persistCsvUpload({
+        .mutation(async ({ ctx, input }) => {
+            const result = await persistCsvUpload({
                 orgId: ctx.orgId,
                 snapshotId: input.snapshotId,
                 fileName: input.fileName,
                 csvText: input.csvText,
                 entityType: "claim",
-            }),
-        ),
+            });
+            await startProposeMappingWorkflow({
+                snapshotId: input.snapshotId,
+                snapshotInputId: result.snapshotInputId,
+                orgId: ctx.orgId,
+                userId: ctx.userId,
+                entityType: "claim",
+            });
+            return result;
+        }),
 
     uploadPoliciesCsv: publicProcedure
         .input(uploadCsvInputSchema)
         .output(uploadCsvOutputSchema)
-        .mutation(async ({ ctx, input }) =>
-            persistCsvUpload({
+        .mutation(async ({ ctx, input }) => {
+            const result = await persistCsvUpload({
                 orgId: ctx.orgId,
                 snapshotId: input.snapshotId,
                 fileName: input.fileName,
                 csvText: input.csvText,
                 entityType: "policy",
-            }),
-        ),
+            });
+            await startProposeMappingWorkflow({
+                snapshotId: input.snapshotId,
+                snapshotInputId: result.snapshotInputId,
+                orgId: ctx.orgId,
+                userId: ctx.userId,
+                entityType: "policy",
+            });
+            return result;
+        }),
 
     uploadCsvFiles: publicProcedure
         .input(uploadBatchCsvInputSchema)
@@ -137,9 +179,76 @@ export const ingestionRouter = router({
                     entityType,
                 });
                 uploads.push(upload);
+                await startProposeMappingWorkflow({
+                    snapshotId: input.snapshotId,
+                    snapshotInputId: upload.snapshotInputId,
+                    orgId: ctx.orgId,
+                    userId: ctx.userId,
+                    entityType,
+                });
             }
 
             return { uploads };
+        }),
+
+    confirmMapping: publicProcedure
+        .input(confirmMappingInputSchema)
+        .output(confirmMappingOutputSchema)
+        .mutation(async ({ ctx, input }) => {
+            const [run] = await db
+                .select({
+                    id: mappingRuns.id,
+                    snapshotId: mappingRuns.snapshotId,
+                    snapshotInputId: mappingRuns.snapshotInputId,
+                    aiProposalJson: mappingRuns.aiProposalJson,
+                    entityType: snapshotInputs.entityType,
+                })
+                .from(mappingRuns)
+                .innerJoin(snapshots, eq(mappingRuns.snapshotId, snapshots.id))
+                .innerJoin(snapshotInputs, eq(mappingRuns.snapshotInputId, snapshotInputs.id))
+                .where(
+                    and(
+                        eq(mappingRuns.id, input.mappingRunId),
+                        eq(snapshots.orgId, ctx.orgId),
+                    ),
+                )
+                .limit(1);
+
+            if (!run) {
+                throw new TRPCError({
+                    code: "NOT_FOUND",
+                    message: "Mapping run not found for this organization",
+                });
+            }
+
+            const validatedMappingJson =
+                input.validatedMappingJson ?? (run.aiProposalJson as object);
+
+            if (!validatedMappingJson) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: "No mapping to confirm; AI proposal may not have completed yet",
+                });
+            }
+
+            await db
+                .update(mappingRuns)
+                .set({
+                    validatedMappingJson: validatedMappingJson as object,
+                    status: "validated",
+                })
+                .where(eq(mappingRuns.id, input.mappingRunId));
+
+            const { workflowId, runId } = await startRunCanonicalizationWorkflow({
+                snapshotId: run.snapshotId,
+                snapshotInputId: run.snapshotInputId,
+                mappingRunId: input.mappingRunId,
+                orgId: ctx.orgId,
+                userId: ctx.userId,
+                entityType: run.entityType,
+            });
+
+            return { workflowId, runId };
         }),
 });
 
