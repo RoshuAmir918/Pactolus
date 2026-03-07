@@ -1,21 +1,10 @@
 import { and, asc, eq } from "drizzle-orm";
-import { z } from "zod";
-import { mappingRuns, rawRows, snapshotInputs, snapshots } from "@db/schema";
+import { mappingProposalSchema } from "@db/mappingSchema";
+import { insertRunStepArtifact } from "@db/runHistory";
+import { rawRows, runSteps, runs, snapshotInputs, snapshots } from "@db/schema";
 import { db } from "../../../db/client";
 import type { ValidateMappingInput, ValidateMappingResult } from "./types";
 import { getCanonicalFieldSpecs } from "./canonicalMetadata";
-
-const mappingProposalSchema = z.object({
-  entityType: z.enum(["claim", "policy"]),
-  mappings: z.array(
-    z.object({
-      canonicalField: z.string().min(1),
-      sourceColumns: z.array(z.string().min(1)).min(1),
-      transform: z.enum(["identity", "sum", "parseDate", "parseMoney"]),
-      confidence: z.number().min(0).max(1).optional(),
-    }),
-  ),
-});
 
 function parseMoney(value: string): number {
   const normalized = value.replace(/[$,%\s]/g, "").replace(/,/g, "");
@@ -47,88 +36,60 @@ export async function validateMappingActivity(
     .set({ status: "ingesting", updatedAt: new Date() })
     .where(eq(snapshots.id, input.snapshotId));
 
-  const [run] = await db
+  await db
+    .update(runs)
+    .set({ status: "running", updatedAt: new Date() })
+    .where(eq(runs.id, input.runId));
+
+  const [acceptedStep] = await db
     .select({
-      id: mappingRuns.id,
-      aiProposalJson: mappingRuns.aiProposalJson,
-      validatedMappingJson: mappingRuns.validatedMappingJson,
-      snapshotId: mappingRuns.snapshotId,
-      snapshotInputId: mappingRuns.snapshotInputId,
+      id: runSteps.id,
+      parametersJson: runSteps.parametersJson,
     })
-    .from(mappingRuns)
+    .from(runSteps)
     .where(
       and(
-        eq(mappingRuns.id, input.mappingRunId),
-        eq(mappingRuns.snapshotId, input.snapshotId),
-        eq(mappingRuns.snapshotInputId, input.snapshotInputId),
+        eq(runSteps.id, input.acceptedMappingStepId),
+        eq(runSteps.runId, input.runId),
+        eq(runSteps.snapshotInputId, input.snapshotInputId),
+        eq(runSteps.stepType, "ACCEPTED_MAPPING"),
       ),
     )
     .limit(1);
 
-  if (!run) {
-    throw new Error("Mapping run not found");
+  if (!acceptedStep) {
+    throw new Error("Accepted mapping step not found");
   }
 
-  const selectedMappingRaw = input.requireConfirmedMapping
-    ? run.validatedMappingJson
-    : run.validatedMappingJson ?? run.aiProposalJson;
-
-  if (!selectedMappingRaw) {
-    const nextStatus = input.requireConfirmedMapping ? "failed" : "pending";
-
-    await db
-      .update(mappingRuns)
-      .set({
-        status: "failed",
-        validationReportJson: {
-          errors: ["No mapping available to validate"],
-          requireConfirmedMapping: Boolean(input.requireConfirmedMapping),
-        },
-      })
-      .where(eq(mappingRuns.id, input.mappingRunId));
-
-    await db
-      .update(snapshotInputs)
-      .set({ status: nextStatus, updatedAt: new Date() })
-      .where(eq(snapshotInputs.id, input.snapshotInputId));
-
-    await db
-      .update(snapshots)
-      .set({ status: input.requireConfirmedMapping ? "failed" : "ingesting", updatedAt: new Date() })
-      .where(eq(snapshots.id, input.snapshotId));
-
-    return {
-      mappingRunId: input.mappingRunId,
-      isValid: false,
-    };
-  }
-
-  const parsed = mappingProposalSchema.safeParse(selectedMappingRaw);
+  const parsed = mappingProposalSchema.safeParse(acceptedStep.parametersJson);
   if (!parsed.success) {
-    const nextStatus = input.requireConfirmedMapping ? "failed" : "pending";
+    const errors = parsed.error.issues.map((issue) => issue.message);
 
-    await db
-      .update(mappingRuns)
-      .set({
-        status: "failed",
-        validationReportJson: {
-          errors: parsed.error.issues.map((issue) => issue.message),
-        },
-      })
-      .where(eq(mappingRuns.id, input.mappingRunId));
+    await insertRunStepArtifact(db, {
+      runStepId: input.acceptedMappingStepId,
+      artifactType: "MAPPING_VALIDATION_REPORT",
+      dataJson: {
+        errors,
+      },
+    });
 
     await db
       .update(snapshotInputs)
-      .set({ status: nextStatus, updatedAt: new Date() })
+      .set({ status: "failed", updatedAt: new Date() })
       .where(eq(snapshotInputs.id, input.snapshotInputId));
 
     await db
       .update(snapshots)
-      .set({ status: input.requireConfirmedMapping ? "failed" : "ingesting", updatedAt: new Date() })
+      .set({ status: "failed", updatedAt: new Date() })
       .where(eq(snapshots.id, input.snapshotId));
 
+    await db
+      .update(runs)
+      .set({ status: "failed", updatedAt: new Date() })
+      .where(eq(runs.id, input.runId));
+
     return {
-      mappingRunId: input.mappingRunId,
+      acceptedMappingStepId: input.acceptedMappingStepId,
       isValid: false,
     };
   }
@@ -214,23 +175,20 @@ export async function validateMappingActivity(
 
   const isValid = errors.length === 0;
 
-  await db
-    .update(mappingRuns)
-    .set({
-      status: isValid ? "validated" : "failed",
-      validatedMappingJson: mapping,
-      validationReportJson: {
-        errors,
-        checkedRows: sampleRows.length,
-        requiredFields,
-      },
-    })
-    .where(eq(mappingRuns.id, input.mappingRunId));
+  await insertRunStepArtifact(db, {
+    runStepId: input.acceptedMappingStepId,
+    artifactType: "MAPPING_VALIDATION_REPORT",
+    dataJson: {
+      errors,
+      checkedRows: sampleRows.length,
+      requiredFields,
+    },
+  });
 
   await db
     .update(snapshotInputs)
     .set({
-      status: isValid ? "ingesting" : input.requireConfirmedMapping ? "failed" : "pending",
+      status: isValid ? "ingesting" : "failed",
       updatedAt: new Date(),
     })
     .where(eq(snapshotInputs.id, input.snapshotInputId));
@@ -238,13 +196,21 @@ export async function validateMappingActivity(
   await db
     .update(snapshots)
     .set({
-      status: isValid ? "ingesting" : input.requireConfirmedMapping ? "failed" : "ingesting",
+      status: isValid ? "ingesting" : "failed",
       updatedAt: new Date(),
     })
     .where(eq(snapshots.id, input.snapshotId));
 
+  await db
+    .update(runs)
+    .set({
+      status: isValid ? "running" : "failed",
+      updatedAt: new Date(),
+    })
+    .where(eq(runs.id, input.runId));
+
   return {
-    mappingRunId: input.mappingRunId,
+    acceptedMappingStepId: input.acceptedMappingStepId,
     isValid,
   };
 }

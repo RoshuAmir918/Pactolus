@@ -13,6 +13,7 @@
     "db:migrate": "drizzle-kit migrate --config=packages/db/src/drizzle.config.ts",
     "db:seed": "tsx packages/db/src/seed.ts",
     "api:dev": "tsx apps/api/src/index.ts",
+    "web:dev": "npm run dev --prefix apps/web",
     "worker:dev": "tsx apps/worker/src/index.ts"
   },
   "dependencies": {

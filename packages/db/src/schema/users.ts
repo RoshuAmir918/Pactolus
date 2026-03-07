@@ -31,6 +31,7 @@ export const users = pgTable(
     authProvider: authProviderEnum("auth_provider").notNull(),
     authSubjectId: text("auth_subject_id").notNull(),
     email: text("email").notNull(),
+    password: text('password').notNull(),
     fullName: text("full_name").notNull(),
     status: userStatusEnum("status").notNull().default("active"),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),

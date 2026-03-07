@@ -1,25 +1,25 @@
 import type { IngestSnapshotWorkflowInput } from "../../workflows/ingestSnapshot";
 
 export type ProposeMappingResult = {
-  mappingRunId: string;
+  suggestedMappingStepId: string;
 };
 
 export type ValidateMappingInput = IngestSnapshotWorkflowInput & {
-  mappingRunId: string;
-  requireConfirmedMapping?: boolean;
+  acceptedMappingStepId: string;
 };
 
 export type ValidateMappingResult = {
-  mappingRunId: string;
+  acceptedMappingStepId: string;
   isValid: boolean;
 };
 
 export type CanonicalizeInput = IngestSnapshotWorkflowInput & {
-  mappingRunId: string;
+  acceptedMappingStepId: string;
 };
 
 export type CanonicalizeResult = {
-  mappingRunId: string;
+  acceptedMappingStepId: string;
+  canonicalizationStepId: string;
   canonicalRowsWritten: number;
   ingestionErrorsWritten: number;
 };

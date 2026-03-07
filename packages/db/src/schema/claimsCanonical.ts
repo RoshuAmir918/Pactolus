@@ -8,8 +8,9 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { mappingRuns } from "./mappingRuns";
 import { rawRows } from "./rawRows";
+import { runs } from "./runs";
+import { runSteps } from "./runSteps";
 import { snapshots } from "./snapshots";
 
 export const claimsCanonical = pgTable(
@@ -19,9 +20,12 @@ export const claimsCanonical = pgTable(
     snapshotId: uuid("snapshot_id")
       .notNull()
       .references(() => snapshots.id, { onDelete: "cascade" }),
-    mappingRunId: uuid("mapping_run_id")
+    runId: uuid("run_id")
       .notNull()
-      .references(() => mappingRuns.id, { onDelete: "cascade" }),
+      .references(() => runs.id, { onDelete: "cascade" }),
+    runStepId: uuid("run_step_id")
+      .notNull()
+      .references(() => runSteps.id, { onDelete: "cascade" }),
     rawRowId: uuid("raw_row_id")
       .notNull()
       .references(() => rawRows.id, { onDelete: "cascade" }),
@@ -43,12 +47,10 @@ export const claimsCanonical = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("claims_canonical_run_raw_row_unique").on(
-      table.mappingRunId,
-      table.rawRowId,
-    ),
+    uniqueIndex("claims_canonical_step_raw_row_unique").on(table.runStepId, table.rawRowId),
     index("claims_canonical_snapshot_id_idx").on(table.snapshotId),
-    index("claims_canonical_mapping_run_id_idx").on(table.mappingRunId),
+    index("claims_canonical_run_id_idx").on(table.runId),
+    index("claims_canonical_run_step_id_idx").on(table.runStepId),
     index("claims_canonical_claim_number_idx").on(table.claimNumber),
   ],
 );

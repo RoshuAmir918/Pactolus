@@ -2,16 +2,18 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import dbClient from "@api/db/client";
-import { mappingRuns, snapshotInputs, snapshots } from "@db/schema";
+import { mappingProposalSchema } from "@db/mappingSchema";
+import { appendRunStep, ensureRunForSnapshot } from "@db/runHistory";
+import { runSteps, runs, snapshotInputs, snapshots } from "@db/schema";
 import { publicProcedure, router } from "@api/trpc/base";
 import {
-    startProposeMappingWorkflow,
-    startRunCanonicalizationWorkflow,
+  executeProposeMappingWorkflow,
+  startRunCanonicalizationWorkflow,
 } from "@worker/temporal/client";
 import {
-    persistCsvUpload,
-    type PersistCsvUploadResult,
-    type UploadEntityType,
+  persistCsvUpload,
+  type PersistCsvUploadResult,
+  type UploadEntityType,
 } from "./services/persistUpload";
 
 const { db } = dbClient;
@@ -19,237 +21,294 @@ const { db } = dbClient;
 const entityTypeSchema = z.enum(["claim", "policy"]);
 
 const createSnapshotInputSchema = z.object({
-    label: z.string().min(1),
-    accountingPeriod: z.string().min(1).optional(),
+  label: z.string().min(1),
+  accountingPeriod: z.string().min(1).optional(),
 });
 
 const createSnapshotOutputSchema = z.object({
-    snapshotId: z.uuid(),
-    status: z.enum(["draft", "ingesting", "ready", "failed"]),
+  snapshotId: z.uuid(),
+  status: z.enum(["draft", "ingesting", "ready", "failed"]),
 });
 
 const uploadCsvInputSchema = z.object({
-    snapshotId: z.uuid(),
-    fileName: z.string().min(1),
-    csvText: z.string().min(1),
+  snapshotId: z.uuid(),
+  fileName: z.string().min(1),
+  csvText: z.string().min(1),
 });
 
 const uploadCsvOutputSchema = z.object({
-    snapshotInputId: z.uuid(),
-    entityType: entityTypeSchema,
-    detectedColumns: z.array(z.string()),
-    rowCount: z.number().int().nonnegative(),
-    sampleRows: z.array(z.record(z.string(), z.string())).max(5),
+  runId: z.uuid(),
+  uploadStepId: z.uuid(),
+  snapshotInputId: z.uuid(),
+  suggestedMappingStepId: z.uuid(),
+  entityType: entityTypeSchema,
+  detectedColumns: z.array(z.string()),
+  rowCount: z.number().int().nonnegative(),
+  sampleRows: z.array(z.record(z.string(), z.string())).max(5),
 });
 
 const batchUploadFileSchema = z.object({
-    fileName: z.string().min(1),
-    csvText: z.string().min(1),
-    entityType: entityTypeSchema.optional(),
+  fileName: z.string().min(1),
+  csvText: z.string().min(1),
+  entityType: entityTypeSchema.optional(),
 });
 
 const uploadBatchCsvInputSchema = z.object({
-    snapshotId: z.uuid(),
-    files: z.array(batchUploadFileSchema).min(1),
+  snapshotId: z.uuid(),
+  files: z.array(batchUploadFileSchema).min(1),
 });
 
 const uploadBatchCsvOutputSchema = z.object({
-    uploads: z.array(uploadCsvOutputSchema),
+  uploads: z.array(uploadCsvOutputSchema),
 });
 
 const confirmMappingInputSchema = z.object({
-    mappingRunId: z.uuid(),
-    validatedMappingJson: z
-        .object({
-            entityType: z.enum(["claim", "policy"]),
-            mappings: z.array(
-                z.object({
-                    canonicalField: z.string(),
-                    sourceColumns: z.array(z.string()),
-                    transform: z.enum(["identity", "sum", "parseDate", "parseMoney"]),
-                    confidence: z.number().optional(),
-                }),
-            ),
-        })
-        .optional(),
+  runId: z.uuid(),
+  snapshotInputId: z.uuid(),
+  suggestedMappingStepId: z.uuid(),
+  acceptedMappingJson: mappingProposalSchema.optional(),
 });
 
 const confirmMappingOutputSchema = z.object({
-    workflowId: z.string(),
-    runId: z.string(),
+  acceptedMappingStepId: z.uuid(),
+  workflowId: z.string(),
+  workflowRunId: z.string(),
 });
 
 function resolveEntityTypeForFile(file: z.infer<typeof batchUploadFileSchema>): UploadEntityType {
-    // AI classification will be added here later.
-    if (!file.entityType) {
-        throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "entityType is currently required until AI classification is enabled",
-        });
-    }
-    return file.entityType;
+  if (!file.entityType) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "entityType is currently required until AI classification is enabled",
+    });
+  }
+
+  return file.entityType;
+}
+
+async function uploadCsvAndSuggestMapping(input: {
+  orgId: string;
+  userId: string;
+  snapshotId: string;
+  fileName: string;
+  csvText: string;
+  entityType: UploadEntityType;
+}): Promise<
+  PersistCsvUploadResult & {
+    runId: string;
+    uploadStepId: string;
+    suggestedMappingStepId: string;
+  }
+> {
+  const run = await ensureRunForSnapshot(db, {
+    orgId: input.orgId,
+    snapshotId: input.snapshotId,
+    createdByUserId: input.userId,
+  });
+
+  const persisted = await persistCsvUpload({
+    orgId: input.orgId,
+    snapshotId: input.snapshotId,
+    fileName: input.fileName,
+    csvText: input.csvText,
+    entityType: input.entityType,
+  });
+
+  await db
+    .update(runs)
+    .set({ status: "running", updatedAt: new Date() })
+    .where(eq(runs.id, run.id));
+
+  const uploadStep = await appendRunStep(db, {
+    runId: run.id,
+    snapshotInputId: persisted.snapshotInputId,
+    stepType: "UPLOAD_DATASET",
+    actorType: "user",
+    actorId: input.userId,
+    parametersJson: {
+      snapshotId: input.snapshotId,
+      snapshotInputId: persisted.snapshotInputId,
+      entityType: input.entityType,
+      fileName: input.fileName,
+      rowCount: persisted.rowCount,
+      detectedColumns: persisted.detectedColumns,
+    },
+  });
+
+  const proposal = await executeProposeMappingWorkflow({
+    runId: run.id,
+    snapshotId: input.snapshotId,
+    snapshotInputId: persisted.snapshotInputId,
+    orgId: input.orgId,
+    userId: input.userId,
+    entityType: input.entityType,
+  });
+
+  if (!proposal.suggestedMappingStepId) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Mapping proposal workflow completed without a suggested mapping step",
+    });
+  }
+
+  return {
+    ...persisted,
+    runId: run.id,
+    uploadStepId: uploadStep.id,
+    suggestedMappingStepId: proposal.suggestedMappingStepId,
+  };
 }
 
 export const ingestionRouter = router({
-    createSnapshot: publicProcedure
-        .input(createSnapshotInputSchema)
-        .output(createSnapshotOutputSchema)
-        .mutation(async ({ ctx, input }) => {
-            const [created] = await db
-                .insert(snapshots)
-                .values({
-                    orgId: ctx.orgId,
-                    createdByUserId: ctx.userId,
-                    label: input.label,
-                    accountingPeriod: input.accountingPeriod,
-                    status: "draft",
-                })
-                .returning({ snapshotId: snapshots.id, status: snapshots.status });
+  createSnapshot: publicProcedure
+    .input(createSnapshotInputSchema)
+    .output(createSnapshotOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const [created] = await db
+        .insert(snapshots)
+        .values({
+          orgId: ctx.orgId,
+          createdByUserId: ctx.userId,
+          label: input.label,
+          accountingPeriod: input.accountingPeriod,
+          status: "draft",
+        })
+        .returning({ snapshotId: snapshots.id, status: snapshots.status });
 
-            return created;
-        }),
+      return created;
+    }),
 
-    uploadClaimsCsv: publicProcedure
-        .input(uploadCsvInputSchema)
-        .output(uploadCsvOutputSchema)
-        .mutation(async ({ ctx, input }) => {
-            const result = await persistCsvUpload({
-                orgId: ctx.orgId,
-                snapshotId: input.snapshotId,
-                fileName: input.fileName,
-                csvText: input.csvText,
-                entityType: "claim",
-            });
-            await startProposeMappingWorkflow({
-                snapshotId: input.snapshotId,
-                snapshotInputId: result.snapshotInputId,
-                orgId: ctx.orgId,
-                userId: ctx.userId,
-                entityType: "claim",
-            });
-            return result;
-        }),
+  uploadClaimsCsv: publicProcedure
+    .input(uploadCsvInputSchema)
+    .output(uploadCsvOutputSchema)
+    .mutation(async ({ ctx, input }) =>
+      uploadCsvAndSuggestMapping({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        snapshotId: input.snapshotId,
+        fileName: input.fileName,
+        csvText: input.csvText,
+        entityType: "claim",
+      }),
+    ),
 
-    uploadPoliciesCsv: publicProcedure
-        .input(uploadCsvInputSchema)
-        .output(uploadCsvOutputSchema)
-        .mutation(async ({ ctx, input }) => {
-            const result = await persistCsvUpload({
-                orgId: ctx.orgId,
-                snapshotId: input.snapshotId,
-                fileName: input.fileName,
-                csvText: input.csvText,
-                entityType: "policy",
-            });
-            await startProposeMappingWorkflow({
-                snapshotId: input.snapshotId,
-                snapshotInputId: result.snapshotInputId,
-                orgId: ctx.orgId,
-                userId: ctx.userId,
-                entityType: "policy",
-            });
-            return result;
-        }),
+  uploadPoliciesCsv: publicProcedure
+    .input(uploadCsvInputSchema)
+    .output(uploadCsvOutputSchema)
+    .mutation(async ({ ctx, input }) =>
+      uploadCsvAndSuggestMapping({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        snapshotId: input.snapshotId,
+        fileName: input.fileName,
+        csvText: input.csvText,
+        entityType: "policy",
+      }),
+    ),
 
-    uploadCsvFiles: publicProcedure
-        .input(uploadBatchCsvInputSchema)
-        .output(uploadBatchCsvOutputSchema)
-        .mutation(async ({ ctx, input }) => {
-            const [snapshot] = await db
-                .select({ id: snapshots.id, orgId: snapshots.orgId })
-                .from(snapshots)
-                .where(eq(snapshots.id, input.snapshotId))
-                .limit(1);
+  uploadCsvFiles: publicProcedure
+    .input(uploadBatchCsvInputSchema)
+    .output(uploadBatchCsvOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const [snapshot] = await db
+        .select({ id: snapshots.id, orgId: snapshots.orgId })
+        .from(snapshots)
+        .where(eq(snapshots.id, input.snapshotId))
+        .limit(1);
 
-            if (!snapshot || snapshot.orgId !== ctx.orgId) {
-                throw new TRPCError({
-                    code: "NOT_FOUND",
-                    message: "Snapshot not found for this organization",
-                });
-            }
+      if (!snapshot || snapshot.orgId !== ctx.orgId) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Snapshot not found for this organization",
+        });
+      }
 
-            const uploads: PersistCsvUploadResult[] = [];
-            for (const file of input.files) {
-                const entityType = resolveEntityTypeForFile(file);
-                const upload = await persistCsvUpload({
-                    orgId: ctx.orgId,
-                    snapshotId: input.snapshotId,
-                    fileName: file.fileName,
-                    csvText: file.csvText,
-                    entityType,
-                });
-                uploads.push(upload);
-                await startProposeMappingWorkflow({
-                    snapshotId: input.snapshotId,
-                    snapshotInputId: upload.snapshotInputId,
-                    orgId: ctx.orgId,
-                    userId: ctx.userId,
-                    entityType,
-                });
-            }
+      const uploads: Array<z.infer<typeof uploadCsvOutputSchema>> = [];
+      for (const file of input.files) {
+        const entityType = resolveEntityTypeForFile(file);
+        const upload = await uploadCsvAndSuggestMapping({
+          orgId: ctx.orgId,
+          userId: ctx.userId,
+          snapshotId: input.snapshotId,
+          fileName: file.fileName,
+          csvText: file.csvText,
+          entityType,
+        });
+        uploads.push(upload);
+      }
 
-            return { uploads };
-        }),
+      return { uploads };
+    }),
 
-    confirmMapping: publicProcedure
-        .input(confirmMappingInputSchema)
-        .output(confirmMappingOutputSchema)
-        .mutation(async ({ ctx, input }) => {
-            const [run] = await db
-                .select({
-                    id: mappingRuns.id,
-                    snapshotId: mappingRuns.snapshotId,
-                    snapshotInputId: mappingRuns.snapshotInputId,
-                    aiProposalJson: mappingRuns.aiProposalJson,
-                    entityType: snapshotInputs.entityType,
-                })
-                .from(mappingRuns)
-                .innerJoin(snapshots, eq(mappingRuns.snapshotId, snapshots.id))
-                .innerJoin(snapshotInputs, eq(mappingRuns.snapshotInputId, snapshotInputs.id))
-                .where(
-                    and(
-                        eq(mappingRuns.id, input.mappingRunId),
-                        eq(snapshots.orgId, ctx.orgId),
-                    ),
-                )
-                .limit(1);
+  confirmMapping: publicProcedure
+    .input(confirmMappingInputSchema)
+    .output(confirmMappingOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const [suggestedStep] = await db
+        .select({
+          id: runSteps.id,
+          runId: runSteps.runId,
+          snapshotInputId: runSteps.snapshotInputId,
+          parametersJson: runSteps.parametersJson,
+          entityType: snapshotInputs.entityType,
+          snapshotId: runs.snapshotId,
+        })
+        .from(runSteps)
+        .innerJoin(runs, eq(runSteps.runId, runs.id))
+        .innerJoin(snapshotInputs, eq(runSteps.snapshotInputId, snapshotInputs.id))
+        .where(
+          and(
+            eq(runSteps.id, input.suggestedMappingStepId),
+            eq(runSteps.runId, input.runId),
+            eq(runSteps.snapshotInputId, input.snapshotInputId),
+            eq(runSteps.stepType, "SUGGESTED_MAPPING"),
+            eq(runs.orgId, ctx.orgId),
+          ),
+        )
+        .limit(1);
 
-            if (!run) {
-                throw new TRPCError({
-                    code: "NOT_FOUND",
-                    message: "Mapping run not found for this organization",
-                });
-            }
+      if (!suggestedStep) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Suggested mapping step not found for this organization",
+        });
+      }
 
-            const validatedMappingJson =
-                input.validatedMappingJson ?? (run.aiProposalJson as object);
+      const acceptedMapping = input.acceptedMappingJson
+        ? mappingProposalSchema.parse(input.acceptedMappingJson)
+        : mappingProposalSchema.parse(suggestedStep.parametersJson);
 
-            if (!validatedMappingJson) {
-                throw new TRPCError({
-                    code: "BAD_REQUEST",
-                    message: "No mapping to confirm; AI proposal may not have completed yet",
-                });
-            }
+      const acceptedStep = await appendRunStep(db, {
+        runId: input.runId,
+        snapshotInputId: input.snapshotInputId,
+        stepType: "ACCEPTED_MAPPING",
+        actorType: "user",
+        actorId: ctx.userId,
+        supersedesStepId: input.suggestedMappingStepId,
+        parametersJson: acceptedMapping,
+      });
 
-            await db
-                .update(mappingRuns)
-                .set({
-                    validatedMappingJson: validatedMappingJson as object,
-                    status: "validated",
-                })
-                .where(eq(mappingRuns.id, input.mappingRunId));
+      await db
+        .update(runs)
+        .set({ status: "running", updatedAt: new Date() })
+        .where(eq(runs.id, input.runId));
 
-            const { workflowId, runId } = await startRunCanonicalizationWorkflow({
-                snapshotId: run.snapshotId,
-                snapshotInputId: run.snapshotInputId,
-                mappingRunId: input.mappingRunId,
-                orgId: ctx.orgId,
-                userId: ctx.userId,
-                entityType: run.entityType,
-            });
+      const { workflowId, workflowRunId } = await startRunCanonicalizationWorkflow({
+        runId: input.runId,
+        snapshotId: suggestedStep.snapshotId,
+        snapshotInputId: input.snapshotInputId,
+        acceptedMappingStepId: acceptedStep.id,
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        entityType: suggestedStep.entityType,
+      });
 
-            return { workflowId, runId };
-        }),
+      return {
+        acceptedMappingStepId: acceptedStep.id,
+        workflowId,
+        workflowRunId,
+      };
+    }),
 });
 
 export type IngestionRouter = typeof ingestionRouter;

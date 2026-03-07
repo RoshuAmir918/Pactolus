@@ -1,31 +1,19 @@
 import { and, asc, eq } from "drizzle-orm";
-import { z } from "zod";
+import { mappingProposalSchema, type MappingRule } from "@db/mappingSchema";
+import { appendRunStep, insertRunStepArtifact } from "@db/runHistory";
 import {
   claimsCanonical,
   ingestionErrors,
-  mappingRuns,
   policiesCanonical,
   rawRows,
+  runSteps,
+  runs,
   snapshotInputs,
   snapshots,
 } from "@db/schema";
 import { db } from "../../../db/client";
 import type { CanonicalizeInput, CanonicalizeResult } from "./types";
 import { getCanonicalFieldMap, type CanonicalFieldSpec } from "./canonicalMetadata";
-
-const mappingProposalSchema = z.object({
-  entityType: z.enum(["claim", "policy"]),
-  mappings: z.array(
-    z.object({
-      canonicalField: z.string().min(1),
-      sourceColumns: z.array(z.string().min(1)).min(1),
-      transform: z.enum(["identity", "sum", "parseDate", "parseMoney"]),
-      confidence: z.number().min(0).max(1).optional(),
-    }),
-  ),
-});
-
-type MappingRule = z.infer<typeof mappingProposalSchema>["mappings"][number];
 
 function parseMoney(raw: string, field: string): number {
   const normalized = raw.replace(/[$,%\s]/g, "").replace(/,/g, "");
@@ -127,37 +115,67 @@ export async function canonicalizeActivity(
     .set({ status: "ingesting", updatedAt: new Date() })
     .where(eq(snapshots.id, input.snapshotId));
 
-  const [run] = await db
+  await db
+    .update(runs)
+    .set({ status: "running", updatedAt: new Date() })
+    .where(eq(runs.id, input.runId));
+
+  const [acceptedStep] = await db
     .select({
-      id: mappingRuns.id,
-      snapshotId: mappingRuns.snapshotId,
-      snapshotInputId: mappingRuns.snapshotInputId,
-      aiProposalJson: mappingRuns.aiProposalJson,
-      validatedMappingJson: mappingRuns.validatedMappingJson,
+      id: runSteps.id,
+      parametersJson: runSteps.parametersJson,
     })
-    .from(mappingRuns)
+    .from(runSteps)
     .where(
       and(
-        eq(mappingRuns.id, input.mappingRunId),
-        eq(mappingRuns.snapshotId, input.snapshotId),
-        eq(mappingRuns.snapshotInputId, input.snapshotInputId),
+        eq(runSteps.id, input.acceptedMappingStepId),
+        eq(runSteps.runId, input.runId),
+        eq(runSteps.snapshotInputId, input.snapshotInputId),
+        eq(runSteps.stepType, "ACCEPTED_MAPPING"),
       ),
     )
     .limit(1);
 
-  if (!run) {
-    throw new Error("Mapping run not found for canonicalization");
+  if (!acceptedStep) {
+    throw new Error("Accepted mapping step not found for canonicalization");
   }
 
-  const mappingRaw = run.validatedMappingJson ?? run.aiProposalJson;
-  if (!mappingRaw) {
-    throw new Error("Mapping run does not include a proposal");
-  }
-
-  const mapping = mappingProposalSchema.parse(mappingRaw);
+  const mapping = mappingProposalSchema.parse(acceptedStep.parametersJson);
   if (mapping.entityType !== input.entityType) {
     throw new Error("Mapping entity type does not match canonicalization input");
   }
+
+  const canonicalizationStepType =
+    input.entityType === "claim" ? "CANONICALIZE_CLAIMS" : "CANONICALIZE_POLICIES";
+
+  const [existingCanonicalizationStep] = await db
+    .select({ id: runSteps.id })
+    .from(runSteps)
+    .where(
+      and(
+        eq(runSteps.runId, input.runId),
+        eq(runSteps.snapshotInputId, input.snapshotInputId),
+        eq(runSteps.stepType, canonicalizationStepType),
+        eq(runSteps.supersedesStepId, input.acceptedMappingStepId),
+      ),
+    )
+    .limit(1);
+
+  const canonicalizationStep =
+    existingCanonicalizationStep ??
+    (await appendRunStep(db, {
+      runId: input.runId,
+      snapshotInputId: input.snapshotInputId,
+      stepType: canonicalizationStepType,
+      actorType: "system",
+      supersedesStepId: input.acceptedMappingStepId,
+      parametersJson: {
+        acceptedMappingStepId: input.acceptedMappingStepId,
+        entityType: input.entityType,
+        snapshotId: input.snapshotId,
+        snapshotInputId: input.snapshotInputId,
+      },
+    }));
 
   const canonicalFieldMap = getCanonicalFieldMap(input.entityType);
   const rulesByField = new Map<string, MappingRule>();
@@ -227,7 +245,8 @@ export async function canonicalizeActivity(
 
         claimInserts.push({
           snapshotId: input.snapshotId,
-          mappingRunId: input.mappingRunId,
+          runId: input.runId,
+          runStepId: canonicalizationStep.id,
           rawRowId: row.id,
           claimNumber,
           accidentDate,
@@ -264,7 +283,8 @@ export async function canonicalizeActivity(
 
         policyInserts.push({
           snapshotId: input.snapshotId,
-          mappingRunId: input.mappingRunId,
+          runId: input.runId,
+          runStepId: canonicalizationStep.id,
           rawRowId: row.id,
           policyNumber,
           effectiveDate,
@@ -275,7 +295,8 @@ export async function canonicalizeActivity(
     } catch (error) {
       errorInserts.push({
         snapshotId: input.snapshotId,
-        mappingRunId: input.mappingRunId,
+        runId: input.runId,
+        runStepId: canonicalizationStep.id,
         rawRowId: row.id,
         code: "VALIDATION_ERROR",
         message: error instanceof Error ? error.message : "Unknown canonicalization error",
@@ -287,13 +308,11 @@ export async function canonicalizeActivity(
   }
 
   await db.transaction(async (tx) => {
-    await tx.delete(ingestionErrors).where(eq(ingestionErrors.mappingRunId, input.mappingRunId));
-    await tx
-      .delete(claimsCanonical)
-      .where(eq(claimsCanonical.mappingRunId, input.mappingRunId));
+    await tx.delete(ingestionErrors).where(eq(ingestionErrors.runStepId, canonicalizationStep.id));
+    await tx.delete(claimsCanonical).where(eq(claimsCanonical.runStepId, canonicalizationStep.id));
     await tx
       .delete(policiesCanonical)
-      .where(eq(policiesCanonical.mappingRunId, input.mappingRunId));
+      .where(eq(policiesCanonical.runStepId, canonicalizationStep.id));
 
     if (input.entityType === "claim" && claimInserts.length > 0) {
       await tx.insert(claimsCanonical).values(claimInserts);
@@ -304,20 +323,6 @@ export async function canonicalizeActivity(
     if (errorInserts.length > 0) {
       await tx.insert(ingestionErrors).values(errorInserts);
     }
-
-    await tx
-      .update(mappingRuns)
-      .set({
-        status: errorInserts.length > 0 ? "failed" : "validated",
-        validationReportJson: {
-          canonicalization: {
-            canonicalRowsWritten:
-              input.entityType === "claim" ? claimInserts.length : policyInserts.length,
-            ingestionErrorsWritten: errorInserts.length,
-          },
-        },
-      })
-      .where(eq(mappingRuns.id, input.mappingRunId));
 
     await tx
       .update(snapshotInputs)
@@ -334,10 +339,29 @@ export async function canonicalizeActivity(
         updatedAt: new Date(),
       })
       .where(eq(snapshots.id, input.snapshotId));
+
+    await tx
+      .update(runs)
+      .set({
+        status: errorInserts.length > 0 ? "failed" : "ready",
+        updatedAt: new Date(),
+      })
+      .where(eq(runs.id, input.runId));
+  });
+
+  await insertRunStepArtifact(db, {
+    runStepId: canonicalizationStep.id,
+    artifactType: "CANONICALIZATION_SUMMARY",
+    dataJson: {
+      canonicalRowsWritten:
+        input.entityType === "claim" ? claimInserts.length : policyInserts.length,
+      ingestionErrorsWritten: errorInserts.length,
+    },
   });
 
   return {
-    mappingRunId: input.mappingRunId,
+    acceptedMappingStepId: input.acceptedMappingStepId,
+    canonicalizationStepId: canonicalizationStep.id,
     canonicalRowsWritten:
       input.entityType === "claim" ? claimInserts.length : policyInserts.length,
     ingestionErrorsWritten: errorInserts.length,

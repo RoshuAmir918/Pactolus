@@ -2,6 +2,7 @@ import { proxyActivities } from "@temporalio/workflow";
 import type * as activities from "../activities";
 
 export type IngestSnapshotWorkflowInput = {
+  runId: string;
   snapshotId: string;
   snapshotInputId: string;
   orgId: string;
@@ -11,9 +12,12 @@ export type IngestSnapshotWorkflowInput = {
 
 export type IngestSnapshotWorkflowResult = {
   status: "awaiting_confirmation" | "completed" | "failed";
+  runId: string;
   snapshotId: string;
   snapshotInputId: string;
-  mappingRunId?: string;
+  suggestedMappingStepId?: string;
+  acceptedMappingStepId?: string;
+  canonicalizationStepId?: string;
   reason?: string;
 };
 
@@ -34,18 +38,19 @@ const {
 export async function proposeMappingWorkflow(
   input: IngestSnapshotWorkflowInput,
 ): Promise<IngestSnapshotWorkflowResult> {
-  const { mappingRunId } = await proposeMappingActivity(input);
+  const { suggestedMappingStepId } = await proposeMappingActivity(input);
 
   return {
     status: "awaiting_confirmation",
+    runId: input.runId,
     snapshotId: input.snapshotId,
     snapshotInputId: input.snapshotInputId,
-    mappingRunId,
+    suggestedMappingStepId,
   };
 }
 
 export type RunCanonicalizationWorkflowInput = IngestSnapshotWorkflowInput & {
-  mappingRunId: string;
+  acceptedMappingStepId: string;
 };
 
 export async function runCanonicalizationWorkflow(
@@ -53,27 +58,29 @@ export async function runCanonicalizationWorkflow(
 ): Promise<IngestSnapshotWorkflowResult> {
   const validation = await validateMappingActivity({
     ...input,
-    requireConfirmedMapping: true,
   });
 
   if (!validation.isValid) {
     return {
       status: "failed",
+      runId: input.runId,
       snapshotId: input.snapshotId,
       snapshotInputId: input.snapshotInputId,
-      mappingRunId: input.mappingRunId,
+      acceptedMappingStepId: input.acceptedMappingStepId,
       reason: "Mapping validation failed",
     };
   }
 
-  await canonicalizeActivity({
+  const canonicalization = await canonicalizeActivity({
     ...input,
   });
 
   return {
     status: "completed",
+    runId: input.runId,
     snapshotId: input.snapshotId,
     snapshotInputId: input.snapshotInputId,
-    mappingRunId: input.mappingRunId,
+    acceptedMappingStepId: input.acceptedMappingStepId,
+    canonicalizationStepId: canonicalization.canonicalizationStepId,
   };
 }
