@@ -7,8 +7,9 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import { mappingRuns } from "./mappingRuns";
 import { rawRows } from "./rawRows";
+import { runs } from "./runs";
+import { runSteps } from "./runSteps";
 import { snapshots } from "./snapshots";
 
 export const ingestionErrorCodeEnum = pgEnum("ingestion_error_code", [
@@ -25,9 +26,12 @@ export const ingestionErrors = pgTable(
     snapshotId: uuid("snapshot_id")
       .notNull()
       .references(() => snapshots.id, { onDelete: "cascade" }),
-    mappingRunId: uuid("mapping_run_id")
+    runId: uuid("run_id")
       .notNull()
-      .references(() => mappingRuns.id, { onDelete: "cascade" }),
+      .references(() => runs.id, { onDelete: "cascade" }),
+    runStepId: uuid("run_step_id")
+      .notNull()
+      .references(() => runSteps.id, { onDelete: "cascade" }),
     rawRowId: uuid("raw_row_id").references(() => rawRows.id, { onDelete: "set null" }),
     code: ingestionErrorCodeEnum("code").notNull(),
     message: text("message").notNull(),
@@ -36,7 +40,8 @@ export const ingestionErrors = pgTable(
   },
   (table) => [
     index("ingestion_errors_snapshot_id_idx").on(table.snapshotId),
-    index("ingestion_errors_mapping_run_id_idx").on(table.mappingRunId),
+    index("ingestion_errors_run_id_idx").on(table.runId),
+    index("ingestion_errors_run_step_id_idx").on(table.runStepId),
     index("ingestion_errors_raw_row_id_idx").on(table.rawRowId),
     index("ingestion_errors_code_idx").on(table.code),
   ],

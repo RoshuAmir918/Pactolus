@@ -15,7 +15,8 @@ import { claimsCanonical, policiesCanonical } from "@db/schema";
 const technicalDbFields = new Set([
   "id",
   "snapshotId",
-  "mappingRunId",
+  "runId",
+  "runStepId",
   "rawRowId",
   "createdAt",
 ]);
