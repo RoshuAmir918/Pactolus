@@ -25,6 +25,7 @@ CREATE TABLE "users" (
 	"auth_provider" "auth_provider" NOT NULL,
 	"auth_subject_id" text NOT NULL,
 	"email" text NOT NULL,
+	"password" text NOT NULL,
 	"full_name" text NOT NULL,
 	"status" "user_status" DEFAULT 'active' NOT NULL,
 	"last_login_at" timestamp with time zone,

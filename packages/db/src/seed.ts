@@ -1,4 +1,5 @@
 import "dotenv/config";
+import bcrypt from "bcrypt";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
@@ -45,7 +46,9 @@ async function getOrCreateOrganization(): Promise<SelectOrganization> {
 }
 
 async function getOrCreateUser(): Promise<SelectUser> {
-    const email = "demo@pactolus.dev";
+    const email = "demo@pactolus.app";
+    const password = "demo-access";
+    const passwordHash = bcrypt.hashSync(password, 10);
 
     const [existingUser] = await db
         .select()
@@ -54,6 +57,10 @@ async function getOrCreateUser(): Promise<SelectUser> {
         .limit(1);
 
     if (existingUser) {
+        await db
+            .update(users)
+            .set({ password: passwordHash })
+            .where(eq(users.id, existingUser.id));
         return existingUser;
     }
 
@@ -64,6 +71,7 @@ async function getOrCreateUser(): Promise<SelectUser> {
             authSubjectId: "auth0|demo-user-1",
             email,
             fullName: "Demo User",
+            password: passwordHash,
             status: "active",
         })
         .returning();
