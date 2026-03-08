@@ -1,3 +1,4 @@
+import type { Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import dbClient from "@api/db/client";
 import { memberships } from "@db/schema";
@@ -10,6 +11,13 @@ export type RequestContext = {
     role: "admin" | "manager" | "analyst";
 };
 
+/** tRPC context: req, res, and optional user (null when not authenticated). */
+export type TRPCContext = {
+    req: Request;
+    res: Response;
+    user: RequestContext | null;
+};
+
 function getHeader(
     headers: Record<string, string | string[] | undefined>,
     key: string,
@@ -18,15 +26,20 @@ function getHeader(
     return Array.isArray(value) ? value[0] : value;
 }
 
-export async function resolveContext(
-    headers: Record<string, string | string[] | undefined>,
-): Promise<RequestContext> {
-    const userId = getHeader(headers, "x-user-id");
-    const orgId = getHeader(headers, "x-org-id");
-
-    if (!userId || !orgId) {
-        throw new Error("Missing x-user-id or x-org-id");
+/** Returns the current user from session or headers, or null if not authenticated. */
+export async function resolveContextOptional(req: Request): Promise<RequestContext | null> {
+    if (req.isAuthenticated() && req.user) {
+        return {
+            userId: req.user.userId,
+            orgId: req.user.orgId,
+            role: req.user.role,
+        };
     }
+
+    const userId = getHeader(req.headers as Record<string, string | string[] | undefined>, "x-user-id");
+    const orgId = getHeader(req.headers as Record<string, string | string[] | undefined>, "x-org-id");
+
+    if (!userId || !orgId) return null;
 
     const [membership] = await db
         .select({
@@ -45,13 +58,18 @@ export async function resolveContext(
         )
         .limit(1);
 
-    if (!membership) {
-        throw new Error("No active membership for this user/org");
-    }
+    if (!membership) return null;
 
     return {
         userId: membership.userId,
         orgId: membership.orgId,
         role: membership.role,
     };
+}
+
+/** Same as resolveContextOptional but throws when not authenticated. */
+export async function resolveContext(req: Request): Promise<RequestContext> {
+    const ctx = await resolveContextOptional(req);
+    if (!ctx) throw new Error("Missing x-user-id or x-org-id");
+    return ctx;
 }

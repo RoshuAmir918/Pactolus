@@ -5,7 +5,7 @@ import dbClient from "@api/db/client";
 import { mappingProposalSchema } from "@db/mappingSchema";
 import { appendRunStep, ensureRunForSnapshot } from "@db/runHistory";
 import { runSteps, runs, snapshotInputs, snapshots } from "@db/schema";
-import { publicProcedure, router } from "@api/trpc/base";
+import { authenticatedProcedure, router } from "@api/trpc/base";
 import {
   executeProposeMappingWorkflow,
   startRunCanonicalizationWorkflow,
@@ -160,7 +160,7 @@ async function uploadCsvAndSuggestMapping(input: {
 }
 
 export const ingestionRouter = router({
-  createSnapshot: publicProcedure
+  createSnapshot: authenticatedProcedure
     .input(createSnapshotInputSchema)
     .output(createSnapshotOutputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -178,7 +178,7 @@ export const ingestionRouter = router({
       return created;
     }),
 
-  uploadClaimsCsv: publicProcedure
+  uploadClaimsCsv: authenticatedProcedure
     .input(uploadCsvInputSchema)
     .output(uploadCsvOutputSchema)
     .mutation(async ({ ctx, input }) =>
@@ -192,7 +192,7 @@ export const ingestionRouter = router({
       }),
     ),
 
-  uploadPoliciesCsv: publicProcedure
+  uploadPoliciesCsv: authenticatedProcedure
     .input(uploadCsvInputSchema)
     .output(uploadCsvOutputSchema)
     .mutation(async ({ ctx, input }) =>
@@ -206,7 +206,7 @@ export const ingestionRouter = router({
       }),
     ),
 
-  uploadCsvFiles: publicProcedure
+  uploadCsvFiles: authenticatedProcedure
     .input(uploadBatchCsvInputSchema)
     .output(uploadBatchCsvOutputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -240,7 +240,7 @@ export const ingestionRouter = router({
       return { uploads };
     }),
 
-  confirmMapping: publicProcedure
+  confirmMapping: authenticatedProcedure
     .input(confirmMappingInputSchema)
     .output(confirmMappingOutputSchema)
     .mutation(async ({ ctx, input }) => {

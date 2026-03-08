@@ -17,7 +17,9 @@
     "worker:dev": "tsx apps/worker/src/index.ts"
   },
   "dependencies": {
+    "@temporalio/activity": "^1.15.0",
     "@temporalio/client": "^1.11.7",
+    "@temporalio/workflow": "^1.15.0",
     "@trpc/server": "^11.11.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
@@ -37,7 +39,9 @@
     "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/express-session": "^1.18.2",
     "@types/node": "^25.3.3",
+    "@types/passport-local": "^1.0.38",
     "@types/pg": "^8.18.0",
     "drizzle-kit": "^0.31.9",
     "tsx": "^4.21.0",
