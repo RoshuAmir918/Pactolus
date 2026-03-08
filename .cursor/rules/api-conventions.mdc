@@ -1,0 +1,20 @@
+---
+description: API and tRPC conventions for Pactolus
+globs: apps/api/**/*.ts
+alwaysApply: false
+---
+
+# API Conventions
+
+- `apps/api/src/index.ts` is the Express entrypoint.
+- tRPC routers are composed in `apps/api/src/trpc/router.ts`.
+- Module routers live under `apps/api/src/modules/*/router.ts`.
+- Auth and request context logic live under `apps/api/src/auth`.
+
+- When adding API behavior:
+- prefer putting endpoints in the appropriate module router
+- prefer putting individual functions in modules/{moduke}/services
+- keep auth and role checks aligned with tRPC procedures and request context
+- reuse existing module and service structure before creating new top-level folders
+
+- If API code needs database tables, import shared schema from `@db/schema` rather than redefining shapes locally.

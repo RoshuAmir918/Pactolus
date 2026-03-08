@@ -1,0 +1,18 @@
+---
+description: Temporal worker and ingestion conventions
+globs: apps/worker/**/*.ts
+alwaysApply: false
+---
+
+# Worker Conventions
+
+- `apps/worker/src/index.ts` starts the worker process.
+- Temporal workflows and workers live under `apps/worker/src/temporal`.
+- Ingestion-specific activities live under `apps/worker/src/temporal/activities/ingestion`.
+
+- When changing worker code:
+- keep orchestration logic in workflows
+- keep side effects and external calls in activities
+- preserve typed workflow inputs and outputs when extending behavior
+
+- Background ingestion behavior should stay in the worker layer, not in API route handlers.

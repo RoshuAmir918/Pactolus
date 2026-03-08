@@ -1,0 +1,343 @@
+Pactolus – Project Overview
+Product Purpose
+
+Pactolus is a versioned analytical workflow system for reinsurance teams.
+
+Insurance and reinsurance companies frequently export large spreadsheets of claims and policy data from internal systems. These datasets are messy, inconsistent, and change over time. Analysts then perform complex analysis in spreadsheets to reconcile datasets, validate numbers, and compute financial summaries.
+
+The problem is that spreadsheet workflows are:
+
+fragile
+
+difficult to reproduce
+
+opaque
+
+prone to silent errors
+
+impossible to audit reliably
+
+Pactolus solves this by turning spreadsheet-based workflows into a structured, versioned, and inspectable analytical system.
+
+The system:
+
+ingests messy datasets
+
+standardizes them using mapping
+
+records every transformation step
+
+allows analysts to explore assumptions safely
+
+makes every result reproducible and traceable
+
+Pactolus should feel conceptually similar to:
+
+Git for analytical workflows
+
+CAD feature history for data analysis
+
+Cursor-style step history for analytics
+
+The goal is controlled flexibility: analysts can explore and modify assumptions while the system preserves a deterministic record of how results were produced.
+
+Core System Principles
+1. Deterministic Core
+
+All canonical data transformations and calculations must be deterministic.
+
+AI may assist users by proposing mappings or analysis suggestions, but AI must never directly modify canonical data.
+
+Every transformation must be:
+
+explicit
+
+validated
+
+reproducible
+
+2. Raw Data Preservation
+
+All uploaded data must first be stored losslessly.
+
+Raw rows from uploaded CSV files are stored as JSON records so that:
+
+original data is never lost
+
+mappings can be re-run
+
+debugging is possible
+
+outputs can always be traced to source rows
+
+Canonical datasets are derived from raw rows.
+
+3. Claims and Policies Are Separate Datasets
+
+Reinsurance workflows involve two major dataset types:
+
+Claims
+
+Individual claim-level records.
+
+Typical fields include:
+
+claim_number
+
+accident_date
+
+policy_number
+
+paid amounts
+
+outstanding reserves
+
+incurred totals
+
+Policies
+
+Policy-level records describing insurance contracts.
+
+Typical fields include:
+
+policy_number
+
+insured_name
+
+effective_date
+
+expiration_date
+
+premium values
+
+line_of_business
+
+These datasets:
+
+arrive in separate CSV exports
+
+have different column structures
+
+are uploaded independently
+
+However, they can belong to the same snapshot.
+
+4. Snapshot Model
+
+A Snapshot represents a point-in-time extract of company data.
+
+A snapshot may include:
+
+a Claims dataset
+
+a Policies dataset
+
+Each dataset is ingested separately but linked by snapshot_id.
+
+Snapshots are immutable once ingestion completes.
+
+5. Raw → Canonical Data Model
+
+The system uses a two-layer ingestion architecture.
+
+Raw Layer
+
+Uploaded CSV rows are stored as raw JSON records.
+
+This preserves original source data.
+
+Canonical Layer
+
+Raw rows are mapped into canonical schemas for:
+
+claims
+
+policies
+
+Canonical schemas contain only fields required for downstream analysis.
+
+Additional unmapped data can remain in raw JSON or an extras_json column.
+
+6. AI-Assisted Column Mapping
+
+CSV exports from different companies use inconsistent column names.
+
+Example:
+
+"Claim Number"
+
+"Claim No."
+
+"Occurrence ID"
+
+These may all represent the same canonical field.
+
+Pactolus uses AI to propose mappings between source columns and canonical fields.
+
+However:
+
+AI output must be validated before use
+
+mappings must pass schema validation
+
+mappings must succeed on sample rows
+
+users may edit or approve mappings
+
+AI is advisory only.
+
+All canonical data must be generated through validated transformations.
+
+7. Analytical Runs
+
+All analysis occurs within Runs.
+
+A run represents a complete analytical workflow executed on a snapshot.
+
+Runs record:
+
+dataset inputs
+
+mappings
+
+filters
+
+assumptions
+
+calculations
+
+outputs
+
+Runs allow users to experiment with different assumptions while preserving reproducibility.
+
+8. Run Step History
+
+Every analytical action must be recorded as a Run Step.
+
+Examples of step types:
+
+dataset upload
+
+mapping application
+
+mapping edits
+
+canonicalization
+
+filtering
+
+grouping
+
+metric definition
+
+reconciliation
+
+aggregation
+
+AI suggestions
+
+user acceptance of suggestions
+
+Each step records:
+
+step type
+
+parameters
+
+actor (user, AI, or system)
+
+timestamp
+
+optional output references
+
+Steps are immutable.
+
+9. Branching and Forking Runs
+
+Users must be able to fork runs to explore alternate assumptions.
+
+Example:
+
+Run A:
+
+upload dataset
+
+apply mapping
+
+define expense calculation
+
+compute aggregates
+
+User may create Run B from Run A:
+
+Run B:
+5. modify expense definition
+6. recompute aggregates
+
+Both analytical paths are preserved.
+
+This enables safe experimentation and comparison.
+
+10. Reproducible Execution
+
+Runs must be replayable.
+
+The system should be able to reproduce outputs by executing steps sequentially from the start of a run.
+
+This ensures results are deterministic and auditable.
+
+Initial Feature Scope
+
+Current development focus is:
+
+CSV ingestion
+
+Raw row storage
+
+AI-assisted mapping
+
+Canonical data extraction
+
+Run and run step recording
+
+Branchable analytical runs
+
+Advanced analytics, reconciliation engines, and actuarial calculations will be added later.
+
+Technology Stack
+
+Backend: Node.js
+
+API: Express + tRPC
+
+Validation: Zod
+
+ORM: Drizzle
+
+Database: PostgreSQL
+
+Workflow engine: Temporal
+
+Testing: Vitest
+
+Frontend: Next.js
+
+Design Goals
+
+Code should prioritize:
+
+clarity
+
+determinism
+
+explicit transformations
+
+traceability of outputs
+
+modular design
+
+Avoid hidden transformations or implicit assumptions.
+
+Every important action in the system should be observable and reproducible.
+
+If you'd like, I can also help you write the Cursor Project Rules section (the guardrails that prevent Cursor from generating bad architecture), which will save you a lot of headaches as the codebase grows.
