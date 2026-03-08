@@ -26,6 +26,7 @@ function getHeader(
     return Array.isArray(value) ? value[0] : value;
 }
 
+
 /** Returns the current user from session or headers, or null if not authenticated. */
 export async function resolveContextOptional(req: Request): Promise<RequestContext | null> {
     if (req.isAuthenticated() && req.user) {
@@ -35,6 +36,7 @@ export async function resolveContextOptional(req: Request): Promise<RequestConte
             role: req.user.role,
         };
     }
+
 
     const userId = getHeader(req.headers as Record<string, string | string[] | undefined>, "x-user-id");
     const orgId = getHeader(req.headers as Record<string, string | string[] | undefined>, "x-org-id");
