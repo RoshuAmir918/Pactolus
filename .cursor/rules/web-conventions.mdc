@@ -1,0 +1,18 @@
+---
+description: Web app conventions for the Next.js frontend
+globs: apps/web/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Web Conventions
+
+- `apps/web` is a Next.js app-router frontend.
+- Route files live under `apps/web/src/app`.
+- Shared frontend utilities live under `apps/web/src/lib`.
+
+- When editing frontend code:
+- prefer app-router patterns already used in `src/app`
+- keep presentation concerns in the web app instead of moving them into API or DB packages
+- introduce shared utilities only when reuse is clear
+
+- Default to matching the existing React, Next.js, and Tailwind-style patterns already present in the app.

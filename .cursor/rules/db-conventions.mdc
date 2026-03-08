@@ -1,0 +1,18 @@
+---
+description: Database schema and Drizzle conventions
+globs: packages/db/**/*.ts
+alwaysApply: false
+---
+
+# Database Conventions
+
+- Drizzle schema source files live under `packages/db/src/schema`.
+- Shared DB exports are surfaced from `packages/db/src/schema/index.ts` and `packages/db/src/index.ts`.
+- Migrations and seed logic live in `packages/db`.
+
+- When changing database code:
+- update the source schema in `packages/db/src/schema`
+- keep shared exports in sync when adding new schema files
+- avoid placing application-specific request logic in the DB package
+
+- Prefer extending existing table and enum patterns over introducing inconsistent schema styles.
