@@ -1,8 +1,8 @@
-export type ParsedCsv = {
+export type CsvRow = Record<string, string>;
+
+export type CsvRowIterator = {
   detectedColumns: string[];
-  rowCount: number;
-  sampleRows: Record<string, string>[];
-  rows: Record<string, string>[];
+  rows: IterableIterator<CsvRow>;
 };
 
 function splitCsvLine(line: string): string[] {
@@ -39,32 +39,61 @@ function splitCsvLine(line: string): string[] {
   return values;
 }
 
-export function parseCsv(csvText: string): ParsedCsv {
-  const lines = csvText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+function* iterateTrimmedCsvLines(csvText: string): IterableIterator<string> {
+  let lineStart = 0;
+  for (let idx = 0; idx <= csvText.length; idx += 1) {
+    const isEnd = idx === csvText.length;
+    if (!isEnd && csvText[idx] !== "\n") {
+      continue;
+    }
 
-  if (lines.length === 0) {
-    return { detectedColumns: [], rowCount: 0, sampleRows: [], rows: [] };
+    let line = csvText.slice(lineStart, idx);
+    if (line.endsWith("\r")) {
+      line = line.slice(0, -1);
+    }
+
+    const trimmed = line.trim();
+    if (trimmed.length > 0) {
+      yield trimmed;
+    }
+
+    lineStart = idx + 1;
+  }
+}
+
+function createRow(
+  detectedColumns: string[],
+  line: string,
+): CsvRow {
+  const values = splitCsvLine(line);
+  const row: CsvRow = {};
+  detectedColumns.forEach((column, idx) => {
+    row[column] = values[idx]?.trim() ?? "";
+  });
+  return row;
+}
+
+export function createCsvRowIterator(csvText: string): CsvRowIterator {
+  const lines = iterateTrimmedCsvLines(csvText);
+  const header = lines.next();
+
+  if (header.done) {
+    return {
+      detectedColumns: [],
+      rows: (function* emptyRows(): IterableIterator<CsvRow> {})(),
+    };
   }
 
-  const detectedColumns = splitCsvLine(lines[0]).map((column) => column.trim());
-  const dataLines = lines.slice(1);
+  const detectedColumns = splitCsvLine(header.value).map((column) => column.trim());
 
-  const rows = dataLines.map((line) => {
-    const values = splitCsvLine(line);
-    const row: Record<string, string> = {};
-    detectedColumns.forEach((column, idx) => {
-      row[column] = values[idx]?.trim() ?? "";
-    });
-    return row;
-  });
+  function* rows(): IterableIterator<CsvRow> {
+    for (const line of lines) {
+      yield createRow(detectedColumns, line);
+    }
+  }
 
   return {
     detectedColumns,
-    rowCount: rows.length,
-    sampleRows: rows.slice(0, 5),
-    rows,
+    rows: rows(),
   };
 }

@@ -4,9 +4,10 @@ import { TRPCError } from "@trpc/server";
 import dbClient from "@api/db/client";
 import { appendRunStep, ensureRunForSnapshot } from "@db/runHistory";
 import { rawRows, runs, snapshotInputs, snapshots } from "@db/schema";
-import { parseCsv } from "./parseCsv";
+import { createCsvRowIterator, type CsvRow } from "./parseCsv";
 
 const { db } = dbClient;
+const RAW_ROW_INSERT_CHUNK_SIZE = 1000;
 
 export type UploadEntityType = "claim" | "policy";
 
@@ -124,7 +125,7 @@ export function resolveEntityTypeForFile(file: BatchUploadFileInput): UploadEnti
 }
 
 export async function uploadCsv(input: UploadCsvInput): Promise<UploadCsvResult> {
-  const parsed = parseCsv(input.csvText);
+  const parsed = createCsvRowIterator(input.csvText);
   if (parsed.detectedColumns.length === 0) {
     throw new TRPCError({
       code: "BAD_REQUEST",
@@ -139,6 +140,8 @@ export async function uploadCsv(input: UploadCsvInput): Promise<UploadCsvResult>
 
   const fileHash = sha256(input.csvText);
   const now = new Date();
+  const sampleRows: CsvRow[] = [];
+  let rowCount = 0;
 
   const snapshotInputId = await db.transaction(async (tx) => {
     await tx
@@ -154,7 +157,7 @@ export async function uploadCsv(input: UploadCsvInput): Promise<UploadCsvResult>
         fileName: input.fileName,
         fileHash,
         status: "ingesting",
-        rowCount: parsed.rowCount,
+        rowCount: 0,
       })
       .onConflictDoUpdate({
         target: [snapshotInputs.snapshotId, snapshotInputs.entityType],
@@ -162,7 +165,7 @@ export async function uploadCsv(input: UploadCsvInput): Promise<UploadCsvResult>
           fileName: input.fileName,
           fileHash,
           status: "ingesting",
-          rowCount: parsed.rowCount,
+          rowCount: 0,
           updatedAt: now,
         },
       })
@@ -170,23 +173,42 @@ export async function uploadCsv(input: UploadCsvInput): Promise<UploadCsvResult>
 
     await tx.delete(rawRows).where(eq(rawRows.snapshotInputId, upserted.id));
 
-    if (parsed.rows.length > 0) {
-      await tx.insert(rawRows).values(
-        parsed.rows.map((row, idx) => ({
-          snapshotId: input.snapshotId,
-          snapshotInputId: upserted.id,
-          rowNumber: idx + 1,
-          rawJson: row,
-          rawHash: buildStableRowHash(row, parsed.detectedColumns),
-        })),
-      );
+    let rawRowBatch: Array<{
+      snapshotId: string;
+      snapshotInputId: string;
+      rowNumber: number;
+      rawJson: CsvRow;
+      rawHash: string;
+    }> = [];
+    for (const row of parsed.rows) {
+      rowCount += 1;
+      if (sampleRows.length < 5) {
+        sampleRows.push(row);
+      }
+
+      rawRowBatch.push({
+        snapshotId: input.snapshotId,
+        snapshotInputId: upserted.id,
+        rowNumber: rowCount,
+        rawJson: row,
+        rawHash: buildStableRowHash(row, parsed.detectedColumns),
+      });
+
+      if (rawRowBatch.length === RAW_ROW_INSERT_CHUNK_SIZE) {
+        await tx.insert(rawRows).values(rawRowBatch);
+        rawRowBatch = [];
+      }
+    }
+
+    if (rawRowBatch.length > 0) {
+      await tx.insert(rawRows).values(rawRowBatch);
     }
 
     await tx
       .update(snapshotInputs)
       .set({
         status: "ready",
-        rowCount: parsed.rowCount,
+        rowCount,
         updatedAt: now,
       })
       .where(eq(snapshotInputs.id, upserted.id));
@@ -203,8 +225,8 @@ export async function uploadCsv(input: UploadCsvInput): Promise<UploadCsvResult>
     snapshotInputId,
     entityType: input.entityType,
     detectedColumns: parsed.detectedColumns,
-    rowCount: parsed.rowCount,
-    sampleRows: parsed.sampleRows,
+    rowCount,
+    sampleRows,
   };
 }
 
