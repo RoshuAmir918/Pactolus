@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { mappingProposalSchema } from "@db/mappingSchema";
+import { mappingProposalSchema } from "@db/schema/mappingSchema";
 
 export const entityTypeSchema = z.enum(["claim", "policy"]);
 

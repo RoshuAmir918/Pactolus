@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import dbClient from "@api/db/client";
-import { appendRunStep, ensureRunForSnapshot } from "@db/runHistory";
+import { appendRunStep, ensureRunForSnapshot } from "@db/schema/runHistory";
 import { rawRows, runs, snapshotInputs, snapshots } from "@db/schema";
 import { createCsvRowIterator, type CsvRow } from "./parseCsv";
 

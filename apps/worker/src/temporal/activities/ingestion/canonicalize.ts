@@ -1,12 +1,12 @@
 import { and, asc, eq } from "drizzle-orm";
-import { mappingProposalSchema, type MappingRule } from "@db/mappingSchema";
-import { appendRunStep, insertRunStepArtifact } from "@db/runHistory";
+import { mappingProposalSchema, type MappingRule } from "@db/schema/mappingSchema";
+import { appendRunStep, insertRunStepArtifact } from "@db/schema/runHistory";
 import {
   claimsCanonical,
   ingestionErrors,
   policiesCanonical,
   rawRows,
-  runSteps,
+  runOperations,
   runs,
   snapshotInputs,
   snapshots,
@@ -122,16 +122,16 @@ export async function canonicalizeActivity(
 
   const [acceptedStep] = await db
     .select({
-      id: runSteps.id,
-      parametersJson: runSteps.parametersJson,
+      id: runOperations.id,
+      parametersJson: runOperations.parametersJson,
     })
-    .from(runSteps)
+    .from(runOperations)
     .where(
       and(
-        eq(runSteps.id, input.acceptedMappingStepId),
-        eq(runSteps.runId, input.runId),
-        eq(runSteps.snapshotInputId, input.snapshotInputId),
-        eq(runSteps.stepType, "ACCEPTED_MAPPING"),
+        eq(runOperations.id, input.acceptedMappingStepId),
+        eq(runOperations.runId, input.runId),
+        eq(runOperations.snapshotInputId, input.snapshotInputId),
+        eq(runOperations.stepType, "ACCEPTED_MAPPING"),
       ),
     )
     .limit(1);
@@ -149,14 +149,14 @@ export async function canonicalizeActivity(
     input.entityType === "claim" ? "CANONICALIZE_CLAIMS" : "CANONICALIZE_POLICIES";
 
   const [existingCanonicalizationStep] = await db
-    .select({ id: runSteps.id })
-    .from(runSteps)
+    .select({ id: runOperations.id })
+    .from(runOperations)
     .where(
       and(
-        eq(runSteps.runId, input.runId),
-        eq(runSteps.snapshotInputId, input.snapshotInputId),
-        eq(runSteps.stepType, canonicalizationStepType),
-        eq(runSteps.supersedesStepId, input.acceptedMappingStepId),
+        eq(runOperations.runId, input.runId),
+        eq(runOperations.snapshotInputId, input.snapshotInputId),
+        eq(runOperations.stepType, canonicalizationStepType),
+        eq(runOperations.supersedesStepId, input.acceptedMappingStepId),
       ),
     )
     .limit(1);

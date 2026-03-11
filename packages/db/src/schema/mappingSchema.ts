@@ -14,3 +14,4 @@ export const mappingProposalSchema = z.object({
 
 export type MappingProposal = z.infer<typeof mappingProposalSchema>;
 export type MappingRule = z.infer<typeof mappingRuleSchema>;
+

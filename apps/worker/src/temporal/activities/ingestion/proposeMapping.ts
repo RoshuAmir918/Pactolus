@@ -1,6 +1,6 @@
 import { asc, eq } from "drizzle-orm";
-import { mappingProposalSchema } from "@db/mappingSchema";
-import { appendRunStep, insertRunStepArtifact } from "@db/runHistory";
+import { mappingProposalSchema } from "@db/schema/mappingSchema";
+import { appendRunStep, insertRunStepArtifact } from "@db/schema/runHistory";
 import { rawRows, runs, snapshotInputs, snapshots } from "@db/schema";
 import { db } from "../../../db/client";
 import { env } from "../../../env";

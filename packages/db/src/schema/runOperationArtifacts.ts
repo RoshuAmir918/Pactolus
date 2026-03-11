@@ -7,22 +7,22 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { runSteps } from "./runSteps";
+import { runOperations } from "./runOperations";
 
-export const runStepArtifactTypeEnum = pgEnum("run_step_artifact_type", [
+export const runOperationArtifactTypeEnum = pgEnum("run_step_artifact_type", [
   "AI_RAW_RESPONSE",
   "MAPPING_VALIDATION_REPORT",
   "CANONICALIZATION_SUMMARY",
 ]);
 
-export const runStepArtifacts = pgTable(
+export const runOperationArtifacts = pgTable(
   "run_step_artifacts",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     runStepId: uuid("run_step_id")
       .notNull()
-      .references(() => runSteps.id, { onDelete: "cascade" }),
-    artifactType: runStepArtifactTypeEnum("artifact_type").notNull(),
+      .references(() => runOperations.id, { onDelete: "cascade" }),
+    artifactType: runOperationArtifactTypeEnum("artifact_type").notNull(),
     dataJson: jsonb("data_json").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -36,5 +36,6 @@ export const runStepArtifacts = pgTable(
   ],
 );
 
-export type InsertRunStepArtifact = typeof runStepArtifacts.$inferInsert;
-export type SelectRunStepArtifact = typeof runStepArtifacts.$inferSelect;
+export type InsertRunOperationArtifact = typeof runOperationArtifacts.$inferInsert;
+export type SelectRunOperationArtifact = typeof runOperationArtifacts.$inferSelect;
+

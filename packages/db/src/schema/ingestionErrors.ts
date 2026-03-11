@@ -9,7 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { rawRows } from "./rawRows";
 import { runs } from "./runs";
-import { runSteps } from "./runSteps";
+import { runOperations } from "./runOperations";
 import { snapshots } from "./snapshots";
 
 export const ingestionErrorCodeEnum = pgEnum("ingestion_error_code", [
@@ -31,7 +31,7 @@ export const ingestionErrors = pgTable(
       .references(() => runs.id, { onDelete: "cascade" }),
     runStepId: uuid("run_step_id")
       .notNull()
-      .references(() => runSteps.id, { onDelete: "cascade" }),
+      .references(() => runOperations.id, { onDelete: "cascade" }),
     rawRowId: uuid("raw_row_id").references(() => rawRows.id, { onDelete: "set null" }),
     code: ingestionErrorCodeEnum("code").notNull(),
     message: text("message").notNull(),

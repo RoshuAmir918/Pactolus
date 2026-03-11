@@ -10,7 +10,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { rawRows } from "./rawRows";
 import { runs } from "./runs";
-import { runSteps } from "./runSteps";
+import { runOperations } from "./runOperations";
 import { snapshots } from "./snapshots";
 
 export const policiesCanonical = pgTable(
@@ -25,7 +25,7 @@ export const policiesCanonical = pgTable(
       .references(() => runs.id, { onDelete: "cascade" }),
     runStepId: uuid("run_step_id")
       .notNull()
-      .references(() => runSteps.id, { onDelete: "cascade" }),
+      .references(() => runOperations.id, { onDelete: "cascade" }),
     rawRowId: uuid("raw_row_id")
       .notNull()
       .references(() => rawRows.id, { onDelete: "cascade" }),

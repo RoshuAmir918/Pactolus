@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
-import { mappingProposalSchema } from "@db/mappingSchema";
-import { insertRunStepArtifact } from "@db/runHistory";
-import { rawRows, runSteps, runs, snapshotInputs, snapshots } from "@db/schema";
+import { mappingProposalSchema } from "@db/schema/mappingSchema";
+import { insertRunStepArtifact } from "@db/schema/runHistory";
+import { rawRows, runOperations, runs, snapshotInputs, snapshots } from "@db/schema";
 import { db } from "../../../db/client";
 import type { ValidateMappingInput, ValidateMappingResult } from "./types";
 import { getCanonicalFieldSpecs } from "./canonicalMetadata";
@@ -43,16 +43,16 @@ export async function validateMappingActivity(
 
   const [acceptedStep] = await db
     .select({
-      id: runSteps.id,
-      parametersJson: runSteps.parametersJson,
+      id: runOperations.id,
+      parametersJson: runOperations.parametersJson,
     })
-    .from(runSteps)
+    .from(runOperations)
     .where(
       and(
-        eq(runSteps.id, input.acceptedMappingStepId),
-        eq(runSteps.runId, input.runId),
-        eq(runSteps.snapshotInputId, input.snapshotInputId),
-        eq(runSteps.stepType, "ACCEPTED_MAPPING"),
+        eq(runOperations.id, input.acceptedMappingStepId),
+        eq(runOperations.runId, input.runId),
+        eq(runOperations.snapshotInputId, input.snapshotInputId),
+        eq(runOperations.stepType, "ACCEPTED_MAPPING"),
       ),
     )
     .limit(1);

@@ -22,7 +22,12 @@ export default function Home() {
       {user ? (
         <div className="flex flex-col items-center gap-4">
           <p className="text-muted-foreground">You are logged in.</p>
-          <LogoutButton />
+          <div className="flex gap-3">
+            <Button asChild variant="default">
+              <Link href="/workspace">Workspace</Link>
+            </Button>
+            <LogoutButton />
+          </div>
         </div>
       ) : (
         <Button asChild>

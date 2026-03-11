@@ -1,14 +1,14 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { runStepArtifacts, runSteps, runs, snapshots } from "./schema";
+import { runOperationArtifacts, runOperations, runs, snapshots } from "./index";
 
 type DbLike = NodePgDatabase<Record<string, never>>;
 
 type AppendRunStepInput = {
   runId: string;
   snapshotInputId?: string;
-  stepType: typeof runSteps.$inferInsert.stepType;
-  actorType: typeof runSteps.$inferInsert.actorType;
+  stepType: typeof runOperations.$inferInsert.stepType;
+  actorType: typeof runOperations.$inferInsert.actorType;
   actorId?: string | null;
   parametersJson: unknown;
   supersedesStepId?: string | null;
@@ -17,17 +17,17 @@ type AppendRunStepInput = {
 export async function appendRunStep(
   db: DbLike,
   input: AppendRunStepInput,
-): Promise<typeof runSteps.$inferSelect> {
+): Promise<typeof runOperations.$inferSelect> {
   return db.transaction(async (tx) => {
     const [nextStep] = await tx
       .select({
-        stepIndex: sql<number>`coalesce(max(${runSteps.stepIndex}), 0) + 1`,
+        stepIndex: sql<number>`coalesce(max(${runOperations.stepIndex}), 0) + 1`,
       })
-      .from(runSteps)
-      .where(eq(runSteps.runId, input.runId));
+      .from(runOperations)
+      .where(eq(runOperations.runId, input.runId));
 
     const [created] = await tx
-      .insert(runSteps)
+      .insert(runOperations)
       .values({
         runId: input.runId,
         snapshotInputId: input.snapshotInputId,
@@ -46,23 +46,23 @@ export async function appendRunStep(
 
 type InsertRunStepArtifactInput = {
   runStepId: string;
-  artifactType: typeof runStepArtifacts.$inferInsert.artifactType;
+  artifactType: typeof runOperationArtifacts.$inferInsert.artifactType;
   dataJson: unknown;
 };
 
 export async function insertRunStepArtifact(
   db: DbLike,
   input: InsertRunStepArtifactInput,
-): Promise<typeof runStepArtifacts.$inferSelect> {
+): Promise<typeof runOperationArtifacts.$inferSelect> {
   const [created] = await db
-    .insert(runStepArtifacts)
+    .insert(runOperationArtifacts)
     .values({
       runStepId: input.runStepId,
       artifactType: input.artifactType,
       dataJson: input.dataJson,
     })
     .onConflictDoUpdate({
-      target: [runStepArtifacts.runStepId, runStepArtifacts.artifactType],
+      target: [runOperationArtifacts.runStepId, runOperationArtifacts.artifactType],
       set: {
         dataJson: input.dataJson,
       },
@@ -112,3 +112,4 @@ export async function ensureRunForSnapshot(
 
   return created;
 }
+

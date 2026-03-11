@@ -13,7 +13,7 @@ import { snapshotInputs } from "./snapshotInputs";
 import { runs } from "./runs";
 import { users } from "./users";
 
-export const runStepTypeEnum = pgEnum("run_step_type", [
+export const runOperationTypeEnum = pgEnum("run_step_type", [
   "UPLOAD_DATASET",
   "APPLY_MAPPING_TEMPLATE",
   "SUGGESTED_MAPPING",
@@ -30,13 +30,13 @@ export const runStepTypeEnum = pgEnum("run_step_type", [
   "LOCK_RUN",
 ]);
 
-export const runStepActorTypeEnum = pgEnum("run_step_actor_type", [
+export const runOperationActorTypeEnum = pgEnum("run_step_actor_type", [
   "user",
   "ai",
   "system",
 ]);
 
-export const runSteps = pgTable(
+export const runOperations = pgTable(
   "run_steps",
   {
     id: uuid("id").defaultRandom().primaryKey(),
@@ -47,8 +47,8 @@ export const runSteps = pgTable(
       onDelete: "cascade",
     }),
     stepIndex: integer("step_index").notNull(),
-    stepType: runStepTypeEnum("step_type").notNull(),
-    actorType: runStepActorTypeEnum("actor_type").notNull(),
+    stepType: runOperationTypeEnum("step_type").notNull(),
+    actorType: runOperationActorTypeEnum("actor_type").notNull(),
     actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
     parametersJson: jsonb("parameters_json").notNull(),
     supersedesStepId: uuid("supersedes_step_id"),
@@ -70,5 +70,6 @@ export const runSteps = pgTable(
   ],
 );
 
-export type InsertRunStep = typeof runSteps.$inferInsert;
-export type SelectRunStep = typeof runSteps.$inferSelect;
+export type InsertRunOperation = typeof runOperations.$inferInsert;
+export type SelectRunOperation = typeof runOperations.$inferSelect;
+
