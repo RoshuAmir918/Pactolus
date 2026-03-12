@@ -1,0 +1,91 @@
+:root {
+  font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+  color: #0f172a;
+  background-color: #f8fafc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.container {
+  padding: 16px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.subtitle {
+  margin: 0 0 16px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+button {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #fff;
+  background: #2563eb;
+}
+
+button.secondary {
+  background: #475569;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.muted {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.status {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.status.ok {
+  color: #0369a1;
+}
+
+.status.error {
+  color: #b91c1c;
+}
+
+pre {
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 10px;
+  font-size: 11px;
+  line-height: 1.4;
+}
