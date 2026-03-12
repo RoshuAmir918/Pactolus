@@ -9,8 +9,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { rawRows } from "./rawRows";
-import { runs } from "./runs";
-import { runOperations } from "./runOperations";
+import { runOperations } from "./operations/runOperations";
+import { runs } from "./operations/runs";
 import { snapshots } from "./snapshots";
 
 export const policiesCanonical = pgTable(

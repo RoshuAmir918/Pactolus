@@ -7,9 +7,9 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import { organizations } from "./organizations";
-import { snapshots } from "./snapshots";
-import { users } from "./users";
+import { organizations } from "../organizations";
+import { snapshots } from "../snapshots";
+import { users } from "../users";
 
 export const runStatusEnum = pgEnum("analysis_run_status", [
   "draft",

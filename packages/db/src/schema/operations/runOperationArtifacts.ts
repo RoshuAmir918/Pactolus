@@ -38,4 +38,3 @@ export const runOperationArtifacts = pgTable(
 
 export type InsertRunOperationArtifact = typeof runOperationArtifacts.$inferInsert;
 export type SelectRunOperationArtifact = typeof runOperationArtifacts.$inferSelect;
-

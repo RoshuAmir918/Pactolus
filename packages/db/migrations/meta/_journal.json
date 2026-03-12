@@ -8,6 +8,20 @@
       "when": 1772925834330,
       "tag": "0000_nervous_venom",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773357558437,
+      "tag": "0001_nice_mimic",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773358362145,
+      "tag": "0002_goofy_garia",
+      "breakpoints": true
     }
   ]
 }

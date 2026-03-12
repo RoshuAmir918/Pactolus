@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { mappingProposalSchema, type MappingRule } from "@db/schema/mappingSchema";
-import { appendRunStep, insertRunStepArtifact } from "@db/schema/runHistory";
+import { appendRunStep, insertRunStepArtifact } from "@db/schema/operations/runHistory";
 import {
   claimsCanonical,
   ingestionErrors,

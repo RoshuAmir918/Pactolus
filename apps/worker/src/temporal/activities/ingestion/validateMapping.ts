@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { mappingProposalSchema } from "@db/schema/mappingSchema";
-import { insertRunStepArtifact } from "@db/schema/runHistory";
+import { insertRunStepArtifact } from "@db/schema/operations/runHistory";
 import { rawRows, runOperations, runs, snapshotInputs, snapshots } from "@db/schema";
 import { db } from "../../../db/client";
 import type { ValidateMappingInput, ValidateMappingResult } from "./types";

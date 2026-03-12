@@ -1,6 +1,6 @@
 {
-  "id": "3033a260-3df7-4178-a8bd-9ffdb0b43421",
-  "prevId": "ec2f1f48-e6ff-4636-8e05-f18f1f2fc6d1",
+  "id": "c87fb1ba-f8dd-4a68-900c-a9879e73c147",
+  "prevId": "3033a260-3df7-4178-a8bd-9ffdb0b43421",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1114,8 +1114,7 @@
         },
         "step_type": {
           "name": "step_type",
-          "type": "run_step_type",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -2486,26 +2485,6 @@
         "user",
         "ai",
         "system"
-      ]
-    },
-    "public.run_step_type": {
-      "name": "run_step_type",
-      "schema": "public",
-      "values": [
-        "UPLOAD_DATASET",
-        "APPLY_MAPPING_TEMPLATE",
-        "SUGGESTED_MAPPING",
-        "ACCEPTED_MAPPING",
-        "REJECTED_MAPPING",
-        "CANONICALIZE_CLAIMS",
-        "CANONICALIZE_POLICIES",
-        "SET_FILTERS",
-        "SET_GROUPING",
-        "SET_METRIC_DEFINITION",
-        "RUN_RECONCILIATION",
-        "RUN_AGGREGATION",
-        "SET_OUTLIER_THRESHOLD",
-        "LOCK_RUN"
       ]
     },
     "public.run_step_artifact_type": {
