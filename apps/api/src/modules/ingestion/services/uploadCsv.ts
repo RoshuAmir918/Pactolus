@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import dbClient from "@api/db/client";
+import { createUploadProfileContextDocument } from "@api/modules/context/services/createUploadProfileContextDocument";
 import { appendRunStep, ensureRunForSnapshot } from "@db/schema/operations/runHistory";
 import { rawRows, runs, snapshotInputs, snapshots } from "@db/schema";
 import { createCsvRowIterator, type CsvRow } from "./parseCsv";
@@ -266,6 +267,21 @@ export async function uploadCsvToSnapshot(
       rowCount: uploaded.rowCount,
       detectedColumns: uploaded.detectedColumns,
     },
+  });
+
+  await createUploadProfileContextDocument({
+    orgId: input.orgId,
+    userId: input.userId,
+    snapshotId: input.snapshotId,
+    runId: run.id,
+    branchId: uploadStep.branchId,
+    uploadStepId: uploadStep.id,
+    snapshotInputId: uploaded.snapshotInputId,
+    entityType: input.entityType,
+    fileName: input.fileName,
+    rowCount: uploaded.rowCount,
+    detectedColumns: uploaded.detectedColumns,
+    sampleRows: uploaded.sampleRows,
   });
 
   // Mapping suggestion will be triggered by a separate procedure later.

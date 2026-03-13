@@ -6,6 +6,7 @@ const { db } = dbClient;
 export type CreateSnapshotInput = {
   orgId: string;
   userId: string;
+  clientId?: string;
   label: string;
   accountingPeriod?: string;
 };
@@ -22,6 +23,7 @@ export async function createSnapshot(
     .insert(snapshots)
     .values({
       orgId: input.orgId,
+      clientId: input.clientId,
       createdByUserId: input.userId,
       label: input.label,
       accountingPeriod: input.accountingPeriod,

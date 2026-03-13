@@ -1,4 +1,5 @@
 export * from "./organizations";
+export * from "./clients";
 export * from "./users";
 export * from "./memberships";
 export * from "./snapshots";
@@ -11,3 +12,4 @@ export * from "./rawRows";
 export * from "./claimsCanonical";
 export * from "./policiesCanonical";
 export * from "./ingestionErrors";
+export * from "./context";

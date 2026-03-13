@@ -1,4 +1,5 @@
 import { index, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { clients } from "./clients";
 import { organizations } from "./organizations";
 import { users } from "./users";
 
@@ -16,6 +17,7 @@ export const snapshots = pgTable(
     orgId: uuid("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id),
@@ -27,6 +29,12 @@ export const snapshots = pgTable(
   },
   (table) => [
     index("snapshots_org_id_idx").on(table.orgId),
+    index("snapshots_client_id_idx").on(table.clientId),
+    index("snapshots_org_client_period_idx").on(
+      table.orgId,
+      table.clientId,
+      table.accountingPeriod,
+    ),
     index("snapshots_created_by_user_id_idx").on(table.createdByUserId),
     index("snapshots_status_idx").on(table.status),
   ],

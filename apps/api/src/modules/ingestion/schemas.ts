@@ -4,6 +4,7 @@ import { mappingProposalSchema } from "@db/schema/mappingSchema";
 export const entityTypeSchema = z.enum(["claim", "policy"]);
 
 export const createSnapshotInputSchema = z.object({
+  clientId: z.uuid().optional(),
   label: z.string().min(1),
   accountingPeriod: z.string().min(1).optional(),
 });

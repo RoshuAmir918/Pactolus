@@ -25,6 +25,7 @@ export const ingestionRouter = router({
         createSnapshot({
           orgId: ctx.orgId,
           userId: ctx.userId,
+          clientId: input.clientId,
           label: input.label,
           accountingPeriod: input.accountingPeriod,
         }),

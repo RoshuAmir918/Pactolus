@@ -22,6 +22,13 @@
       "when": 1773358362145,
       "tag": "0002_goofy_garia",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1773361285696,
+      "tag": "0003_flimsy_night_thrasher",
+      "breakpoints": true
     }
   ]
 }
