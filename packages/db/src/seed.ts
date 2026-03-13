@@ -6,6 +6,7 @@ import pg from "pg";
 import {
     memberships,
     organizations,
+    clients,
     users,
     type SelectMembership,
     type SelectOrganization,
@@ -108,10 +109,46 @@ async function getOrCreateMembership(
     return createdMembership;
 }
 
+async function seedClientsForOrganization(orgId: string): Promise<void> {
+    const clientNames = [
+        "UnitedHealth Group",
+        "Ping An Insurance",
+        "Allianz",
+        "AXA",
+        "China Life Insurance",
+        "Prudential Financial",
+        "Berkshire Hathaway",
+        "MetLife",
+        "Japan Post Insurance",
+        "Munich Re",
+        "Zurich Insurance Group",
+        "Cigna",
+        "Chubb Limited",
+        "AIA Group",
+        "Generali",
+        "State Farm",
+        "Travelers",
+        "Prudential plc",
+        "Swiss Re",
+        "AIG",
+    ];
+
+    await db
+        .insert(clients)
+        .values(
+            clientNames.map((name) => ({
+                orgId,
+                name,
+            })),
+        )
+        .onConflictDoNothing();
+}
+
 async function main(): Promise<void> {
     const org = await getOrCreateOrganization();
     const user = await getOrCreateUser();
     const membership = await getOrCreateMembership(user.id, org.id);
+    await seedClientsForOrganization(org.id);
 
     console.log("Seed complete");
     console.log({

@@ -150,21 +150,28 @@ export function ClientViewItem({
               <div className="flex-1 truncate text-left text-sm font-semibold">
                 <span className="truncate">{org.name}</span>
               </div>
-              <button
-                type="button"
+              <div
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleCollapsed(viewId);
                 }}
+                role="button"
+                tabIndex={0}
                 className="flex shrink-0 cursor-pointer items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
                 aria-label={collapsed ? "Expand client" : "Condense client"}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onToggleCollapsed(viewId);
+                  }
+                }}
               >
                 {collapsed ? (
                   <ChevronRight className="size-3.5" />
                 ) : (
                   <ChevronDown className="size-3.5" />
                 )}
-              </button>
+              </div>
               <ChevronsUpDown className="ml-0.5 size-3 shrink-0 text-muted-foreground" />
             </SidebarMenuButton>
           </PopoverTrigger>
