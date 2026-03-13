@@ -17,6 +17,8 @@ CREATE TYPE "public"."context_document_type" AS ENUM('raw_profile', 'canonical_s
 CREATE TYPE "public"."context_scope" AS ENUM('organization', 'client', 'snapshot', 'run_branch', 'global_benchmark');--> statement-breakpoint
 CREATE TYPE "public"."context_truth_tier" AS ENUM('tier0', 'tier1', 'tier2', 'tier3');--> statement-breakpoint
 CREATE TYPE "public"."context_source_type" AS ENUM('snapshot_input', 'raw_row', 'run_step', 'run_step_artifact', 'canonical_claim', 'canonical_policy', 'external_reference');--> statement-breakpoint
+CREATE TYPE "public"."excel_monitored_region_status" AS ENUM('active', 'archived');--> statement-breakpoint
+CREATE TYPE "public"."excel_monitored_region_type" AS ENUM('input', 'output');--> statement-breakpoint
 CREATE TABLE "organizations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,
@@ -232,6 +234,21 @@ CREATE TABLE "context_document_sources" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "excel_monitored_regions" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"org_id" uuid NOT NULL,
+	"snapshot_id" uuid NOT NULL,
+	"sheet_name" text NOT NULL,
+	"address" text NOT NULL,
+	"region_type" "excel_monitored_region_type" NOT NULL,
+	"confidence_percent" integer DEFAULT 0 NOT NULL,
+	"user_confirmed" boolean DEFAULT false NOT NULL,
+	"status" "excel_monitored_region_status" DEFAULT 'active' NOT NULL,
+	"created_by_user_id" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "clients" ADD CONSTRAINT "clients_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "memberships" ADD CONSTRAINT "memberships_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "memberships" ADD CONSTRAINT "memberships_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -276,6 +293,9 @@ ALTER TABLE "context_documents" ADD CONSTRAINT "context_documents_branch_id_run_
 ALTER TABLE "context_documents" ADD CONSTRAINT "context_documents_source_step_id_run_steps_id_fk" FOREIGN KEY ("source_step_id") REFERENCES "public"."run_steps"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_documents" ADD CONSTRAINT "context_documents_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_document_sources" ADD CONSTRAINT "context_document_sources_context_document_id_context_documents_id_fk" FOREIGN KEY ("context_document_id") REFERENCES "public"."context_documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "excel_monitored_regions" ADD CONSTRAINT "excel_monitored_regions_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "excel_monitored_regions" ADD CONSTRAINT "excel_monitored_regions_snapshot_id_snapshots_id_fk" FOREIGN KEY ("snapshot_id") REFERENCES "public"."snapshots"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "excel_monitored_regions" ADD CONSTRAINT "excel_monitored_regions_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "organizations_status_idx" ON "organizations" USING btree ("status");--> statement-breakpoint
 CREATE UNIQUE INDEX "clients_org_name_unique" ON "clients" USING btree ("org_id","name");--> statement-breakpoint
 CREATE INDEX "clients_org_id_idx" ON "clients" USING btree ("org_id");--> statement-breakpoint
@@ -350,4 +370,10 @@ CREATE INDEX "context_documents_status_idx" ON "context_documents" USING btree (
 CREATE UNIQUE INDEX "context_document_sources_doc_source_unique" ON "context_document_sources" USING btree ("context_document_id","source_type","source_ref_id");--> statement-breakpoint
 CREATE INDEX "context_document_sources_doc_id_idx" ON "context_document_sources" USING btree ("context_document_id");--> statement-breakpoint
 CREATE INDEX "context_document_sources_source_type_idx" ON "context_document_sources" USING btree ("source_type");--> statement-breakpoint
-CREATE INDEX "context_document_sources_source_ref_id_idx" ON "context_document_sources" USING btree ("source_ref_id");
+CREATE INDEX "context_document_sources_source_ref_id_idx" ON "context_document_sources" USING btree ("source_ref_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "excel_monitored_regions_unique" ON "excel_monitored_regions" USING btree ("snapshot_id","sheet_name","address","region_type");--> statement-breakpoint
+CREATE INDEX "excel_monitored_regions_org_id_idx" ON "excel_monitored_regions" USING btree ("org_id");--> statement-breakpoint
+CREATE INDEX "excel_monitored_regions_snapshot_id_idx" ON "excel_monitored_regions" USING btree ("snapshot_id");--> statement-breakpoint
+CREATE INDEX "excel_monitored_regions_sheet_name_idx" ON "excel_monitored_regions" USING btree ("sheet_name");--> statement-breakpoint
+CREATE INDEX "excel_monitored_regions_region_type_idx" ON "excel_monitored_regions" USING btree ("region_type");--> statement-breakpoint
+CREATE INDEX "excel_monitored_regions_status_idx" ON "excel_monitored_regions" USING btree ("status");
