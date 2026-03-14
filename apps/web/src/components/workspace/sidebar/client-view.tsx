@@ -1,6 +1,7 @@
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronRight, ChevronsUpDown } from "lucide-react";
+import { useSetAtom } from "jotai";
 
 import {
   SidebarMenu,
@@ -22,13 +23,12 @@ import {
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-type DemoOrg = {
-  id: string;
-  name: string;
-  plan: string;
-  snapshots: Array<{ id: string; name: string }>;
-};
+import type { DemoOrg } from "@/stores/workspace";
+import {
+  activeClientIdAtom,
+  activeSnapshotIdAtom,
+  leftPaneModeAtom,
+} from "@/stores/workspace-ui";
 
 type ClientViewProps = {
   viewId: string;
@@ -44,8 +44,6 @@ type ClientViewProps = {
   onChangeSnapshot: (viewId: string, snapshotId: string) => void;
   canRemove: boolean;
   onRemove: (viewId: string) => void;
-  openFolders: Record<string, boolean>;
-  onToggleFolder: (viewId: string, folderId: string) => void;
   collapsed: boolean;
   onToggleCollapsed: (viewId: string) => void;
 };
@@ -68,64 +66,13 @@ export function ClientViewItem({
   onChangeSnapshot,
   canRemove,
   onRemove,
-  openFolders,
-  onToggleFolder,
   collapsed,
   onToggleCollapsed,
 }: ClientViewProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
-
-  const folders = useMemo(
-    () => [
-      {
-        id: `${viewId}-snapshots`,
-        name: "Snapshots",
-        files: [
-          {
-            id: `${viewId}-snapshots-1`,
-            name: "portfolio_snapshot_q4_2025.csv",
-          },
-          {
-            id: `${viewId}-snapshots-2`,
-            name: "renewal_scenario_q1_2026.csv",
-          },
-          {
-            id: `${viewId}-snapshots-3`,
-            name: "claims_deep_dive_export.xlsx",
-          },
-        ],
-      },
-      {
-        id: `${viewId}-notes`,
-        name: "Notes",
-        files: [
-          {
-            id: `${viewId}-notes-1`,
-            name: "underwriting_assumptions.xlsx",
-          },
-          {
-            id: `${viewId}-notes-2`,
-            name: "pricing_memo_internal.csv",
-          },
-        ],
-      },
-      {
-        id: `${viewId}-runs`,
-        name: "Runs",
-        files: [
-          {
-            id: `${viewId}-runs-1`,
-            name: "stochastic_run_2026_q1.csv",
-          },
-          {
-            id: `${viewId}-runs-2`,
-            name: "stress_test_2026_market_shock.xlsx",
-          },
-        ],
-      },
-    ],
-    [viewId],
-  );
+  const setPaneMode = useSetAtom(leftPaneModeAtom);
+  const setActiveClientId = useSetAtom(activeClientIdAtom);
+  const setActiveSnapshotId = useSetAtom(activeSnapshotIdAtom);
 
   return (
     <SidebarMenu>
@@ -244,57 +191,33 @@ export function ClientViewItem({
 
         {!collapsed && (
           <SidebarMenuSub className="mt-1.5 space-y-0.5 mr-0 px-0 py-0">
-            {folders.map((folder) => {
-            const isOpen = openFolders[folder.id] ?? false;
-            return (
-              <div key={folder.id} className="space-y-0">
-                <SidebarMenuSubItem>
-                  <SidebarMenuSubButton
-                    onClick={() => onToggleFolder(viewId, folder.id)}
-                    className="cursor-pointer h-9 translate-x-0 rounded-none py-1.5 text-xs"
-                  >
-                    <ChevronRight
-                      className={`mr-0 size-3 transition-transform ${
-                        isOpen ? "rotate-90" : ""
-                      }`}
-                    />
-                    <span>{folder.name}</span>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-
-                {isOpen &&
-                  folder.files.map((file) => (
-                    <SidebarMenuSubItem key={file.id}>
-                      <SidebarMenuSubButton
-                        isActive={
-                          activeSelection?.viewId === viewId &&
-                          activeSelection?.snapshotId === file.id
-                        }
-                        onClick={() => onChangeSnapshot(viewId, file.id)}
-                        className="cursor-pointer h-9 translate-x-0 rounded-none py-1.5 pl-6 text-xs"
-                      >
-                        <Image
-                          src={
-                            file.name.toLowerCase().endsWith(".csv")
-                              ? "/icons/csv.png"
-                              : "/icons/xlsx.svg"
-                          }
-                          alt={
-                            file.name.toLowerCase().endsWith(".csv")
-                              ? "CSV file"
-                              : "Excel file"
-                          }
-                          width={12}
-                          height={12}
-                          className="mr-0 rounded-[3px]"
-                        />
-                        <span>{file.name}</span>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  ))}
-              </div>
-            );
-            })}
+            {org.snapshots.map((snapshot) => (
+              <SidebarMenuSubItem key={snapshot.id}>
+                <SidebarMenuSubButton
+                  isActive={
+                    snapshotId === snapshot.id ||
+                    (activeSelection?.viewId === viewId &&
+                      activeSelection?.snapshotId === snapshot.id)
+                  }
+                  onClick={() => {
+                    onChangeSnapshot(viewId, snapshot.id);
+                    setActiveClientId(org.id);
+                    setActiveSnapshotId(snapshot.id);
+                    setPaneMode("snapshot");
+                  }}
+                  className="cursor-pointer h-9 translate-x-0 rounded-none py-1.5 text-xs"
+                >
+                  <Image
+                    src="/icons/xlsx.svg"
+                    alt="Snapshot item"
+                    width={12}
+                    height={12}
+                    className="mr-0 rounded-[3px]"
+                  />
+                  <span>{snapshot.name}</span>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
           </SidebarMenuSub>
         )}
       </SidebarMenuItem>

@@ -10,6 +10,7 @@ export const hintMatchMethodSchema = z.enum([
   "exact",
   "substring",
   "token_overlap",
+  "semantic_ai",
   "none",
 ]);
 

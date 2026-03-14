@@ -9,9 +9,8 @@ type CreateUploadProfileContextDocumentInput = {
   orgId: string;
   userId: string;
   snapshotId: string;
-  runId: string;
-  branchId: string;
-  uploadStepId: string;
+  runId?: string;
+  branchId?: string;
   snapshotInputId: string;
   entityType: "claim" | "policy";
   fileName: string;
@@ -42,9 +41,8 @@ export async function createUploadProfileContextDocument(
       orgId: input.orgId,
       clientId: snapshot.clientId,
       snapshotId: input.snapshotId,
-      runId: input.runId,
-      branchId: input.branchId,
-      sourceStepId: input.uploadStepId,
+      runId: input.runId ?? null,
+      branchId: input.branchId ?? null,
       scopeType: "snapshot",
       docType: "raw_profile",
       truthTier: "tier0",
@@ -65,7 +63,6 @@ export async function createUploadProfileContextDocument(
       keywordsJson: input.detectedColumns,
       provenanceJson: {
         source: "ingestion.uploadCsvToSnapshot",
-        uploadStepId: input.uploadStepId,
         snapshotInputId: input.snapshotInputId,
       },
       createdByUserId: input.userId,
@@ -77,11 +74,6 @@ export async function createUploadProfileContextDocument(
       contextDocumentId: contextDocument.id,
       sourceType: "snapshot_input",
       sourceRefId: input.snapshotInputId,
-    },
-    {
-      contextDocumentId: contextDocument.id,
-      sourceType: "run_step",
-      sourceRefId: input.uploadStepId,
     },
   ]);
 

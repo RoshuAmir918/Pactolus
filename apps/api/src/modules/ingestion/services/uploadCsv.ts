@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import dbClient from "@api/db/client";
 import { createUploadProfileContextDocument } from "@api/modules/context/services/createUploadProfileContextDocument";
-import { appendRunStep, ensureRunForSnapshot } from "@db/schema/operations/runHistory";
+import { ensureMainBranchForRun, ensureRunForSnapshot } from "@db/schema/operations/runHistory";
 import { rawRows, runs, snapshotInputs, snapshots } from "@db/schema";
 import { createCsvRowIterator, type CsvRow } from "./parseCsv";
 
@@ -34,7 +34,6 @@ export type UploadCsvToSnapshotInput = UploadCsvInput & {
 
 export type UploadCsvToSnapshotResult = UploadCsvResult & {
   runId: string;
-  uploadStepId: string;
 };
 
 export type BatchUploadFileInput = {
@@ -253,20 +252,9 @@ export async function uploadCsvToSnapshot(
     .set({ status: "running", updatedAt: new Date() })
     .where(eq(runs.id, run.id));
 
-  const uploadStep = await appendRunStep(db, {
+  const mainBranch = await ensureMainBranchForRun(db, {
     runId: run.id,
-    snapshotInputId: uploaded.snapshotInputId,
-    stepType: "UPLOAD_DATASET",
-    actorType: "user",
-    actorId: input.userId,
-    parametersJson: {
-      snapshotId: input.snapshotId,
-      snapshotInputId: uploaded.snapshotInputId,
-      entityType: input.entityType,
-      fileName: input.fileName,
-      rowCount: uploaded.rowCount,
-      detectedColumns: uploaded.detectedColumns,
-    },
+    createdByUserId: input.userId,
   });
 
   await createUploadProfileContextDocument({
@@ -274,8 +262,7 @@ export async function uploadCsvToSnapshot(
     userId: input.userId,
     snapshotId: input.snapshotId,
     runId: run.id,
-    branchId: uploadStep.branchId,
-    uploadStepId: uploadStep.id,
+    branchId: mainBranch.id,
     snapshotInputId: uploaded.snapshotInputId,
     entityType: input.entityType,
     fileName: input.fileName,
@@ -290,7 +277,6 @@ export async function uploadCsvToSnapshot(
   return {
     ...uploaded,
     runId: run.id,
-    uploadStepId: uploadStep.id,
   };
 }
 

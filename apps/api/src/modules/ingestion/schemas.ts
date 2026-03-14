@@ -22,7 +22,6 @@ export const uploadCsvInputSchema = z.object({
 
 export const uploadCsvOutputSchema = z.object({
   runId: z.uuid(),
-  uploadStepId: z.uuid(),
   snapshotInputId: z.uuid(),
   entityType: entityTypeSchema,
   detectedColumns: z.array(z.string()),

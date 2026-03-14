@@ -12,26 +12,15 @@ type GetColumnMappingHintsInput = {
   maxSuggestionsPerColumn: number;
 };
 
-type MatchMethod = "exact" | "substring" | "token_overlap" | "none";
-
-type ColumnHintSuggestion = {
-  sourceColumn: string;
-  confidence: number;
-  sourceContextDocumentId: string;
-  matchMethod: Exclude<MatchMethod, "none">;
-};
-
-type ScoredCandidate = {
-  sourceColumn: string;
-  sourceContextDocumentId: string;
-  confidence: number;
-  matchMethod: MatchMethod;
-};
-
 export type GetColumnMappingHintsResult = {
   hints: Array<{
     targetColumn: string;
-    suggestions: ColumnHintSuggestion[];
+    suggestions: Array<{
+      sourceColumn: string;
+      confidence: number;
+      sourceContextDocumentId: string;
+      matchMethod: "semantic_ai";
+    }>;
   }>;
 };
 
@@ -51,215 +40,247 @@ export async function getColumnMappingHints(
     });
   }
 
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "ANTHROPIC_API_KEY is not configured",
+    });
+  }
+
+  const contextCandidates = await loadContextCandidates(input.orgId, input.snapshotId);
+  const prompt = buildPrompt(input.targetColumns, contextCandidates, input.maxSuggestionsPerColumn);
+  const model = process.env.CLAUDE_MODEL ?? "claude-3-5-sonnet-latest";
+  const aiRaw = await callAnthropicJson({
+    apiKey,
+    model,
+    prompt,
+  });
+
+  return normalizeAiResult(aiRaw, contextCandidates, input.maxSuggestionsPerColumn);
+}
+
+async function loadContextCandidates(orgId: string, snapshotId: string) {
   const documents = await db
     .select({
       id: contextDocuments.id,
-      truthTier: contextDocuments.truthTier,
       contentJson: contextDocuments.contentJson,
     })
     .from(contextDocuments)
     .where(
       and(
-        eq(contextDocuments.orgId, input.orgId),
-        eq(contextDocuments.snapshotId, input.snapshotId),
+        eq(contextDocuments.orgId, orgId),
+        eq(contextDocuments.snapshotId, snapshotId),
         eq(contextDocuments.status, "active"),
       ),
     )
     .orderBy(desc(contextDocuments.createdAt))
     .limit(200);
 
-  const sourceColumns = collectSourceColumns(documents);
-  const hints = input.targetColumns.map((targetColumn) => {
-    const scored = sourceColumns
-      .map((candidate) => scoreCandidate(targetColumn, candidate))
-      .filter(isColumnHintSuggestion)
-      .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, input.maxSuggestionsPerColumn)
-      .map((candidate) => ({
-        sourceColumn: candidate.sourceColumn,
-        confidence: candidate.confidence,
-        sourceContextDocumentId: candidate.sourceContextDocumentId,
-        matchMethod: candidate.matchMethod,
-      }));
-
-    return {
-      targetColumn,
-      suggestions: scored,
-    };
-  });
-
-  return { hints };
-}
-
-function collectSourceColumns(
-  documents: Array<{
-    id: string;
-    truthTier: "tier0" | "tier1" | "tier2" | "tier3";
-    contentJson: unknown;
-  }>,
-): Array<{
-  sourceColumn: string;
-  sourceContextDocumentId: string;
-  truthTier: "tier0" | "tier1" | "tier2" | "tier3";
-}> {
-  const collected: Array<{
-    sourceColumn: string;
-    sourceContextDocumentId: string;
-    truthTier: "tier0" | "tier1" | "tier2" | "tier3";
-  }> = [];
-
+  const byNormalized = new Map<string, { sourceColumn: string; sourceContextDocumentId: string }>();
   for (const document of documents) {
     const columns = extractDetectedColumns(document.contentJson);
-    for (const sourceColumn of columns) {
-      collected.push({
-        sourceColumn,
+    for (const column of columns) {
+      const normalized = normalize(column);
+      if (!normalized || byNormalized.has(normalized)) {
+        continue;
+      }
+      byNormalized.set(normalized, {
+        sourceColumn: column,
         sourceContextDocumentId: document.id,
-        truthTier: document.truthTier,
       });
     }
   }
+  return Array.from(byNormalized.entries()).map(([normalized, value]) => ({
+    normalized,
+    sourceColumn: value.sourceColumn,
+    sourceContextDocumentId: value.sourceContextDocumentId,
+  }));
+}
 
-  return dedupeBestByColumn(collected);
+function buildPrompt(
+  targetColumns: string[],
+  contextCandidates: Array<{
+    normalized: string;
+    sourceColumn: string;
+    sourceContextDocumentId: string;
+  }>,
+  maxSuggestionsPerColumn: number,
+): string {
+  return JSON.stringify({
+    task: "Map target columns to context source columns.",
+    targetColumns,
+    contextCandidateColumns: contextCandidates.map((candidate) => candidate.sourceColumn),
+    maxSuggestionsPerColumn,
+    instructions: [
+      "Use only source columns provided in contextCandidateColumns.",
+      "Return strict JSON only.",
+      "confidence must be between 0 and 1.",
+      "If uncertain, return low confidence.",
+    ],
+    outputSchema: {
+      hints: [
+        {
+          targetColumn: "string",
+          suggestions: [
+            {
+              sourceColumn: "string",
+              confidence: "number 0..1",
+            },
+          ],
+        },
+      ],
+    },
+  });
+}
+
+async function callAnthropicJson(input: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+}): Promise<unknown> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": input.apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        max_tokens: 900,
+        temperature: 0.1,
+        messages: [{ role: "user", content: input.prompt }],
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Anthropic error ${response.status}: ${body}`);
+    }
+
+    const data = (await response.json()) as {
+      content?: Array<{ type: string; text?: string }>;
+    };
+    const text = data.content?.find((item) => item.type === "text")?.text;
+    if (!text) {
+      throw new Error("Anthropic returned no text content");
+    }
+    return parseJsonObject(text);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function parseJsonObject(text: string): unknown {
+  const trimmed = text.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) {
+      throw new Error("Unable to parse JSON response from AI");
+    }
+    return JSON.parse(trimmed.slice(start, end + 1));
+  }
+}
+
+function normalizeAiResult(
+  raw: unknown,
+  candidates: Array<{
+    normalized: string;
+    sourceColumn: string;
+    sourceContextDocumentId: string;
+  }>,
+  maxSuggestionsPerColumn: number,
+): GetColumnMappingHintsResult {
+  const byNormalized = new Map(candidates.map((candidate) => [candidate.normalized, candidate]));
+  const hintsRaw = (raw as { hints?: unknown })?.hints;
+  if (!Array.isArray(hintsRaw)) {
+    return { hints: [] };
+  }
+
+  const hints = hintsRaw
+    .map((hint) => {
+      const targetColumn = String((hint as { targetColumn?: unknown }).targetColumn ?? "").trim();
+      if (!targetColumn) {
+        return null;
+      }
+      const suggestionsRaw = (hint as { suggestions?: unknown }).suggestions;
+      if (!Array.isArray(suggestionsRaw)) {
+        return { targetColumn, suggestions: [] };
+      }
+
+      const suggestions = suggestionsRaw
+        .map((item) => {
+          const sourceColumn = String((item as { sourceColumn?: unknown }).sourceColumn ?? "").trim();
+          const confidence = Number((item as { confidence?: unknown }).confidence ?? 0);
+          if (!sourceColumn || Number.isNaN(confidence)) {
+            return null;
+          }
+
+          const matched = byNormalized.get(normalize(sourceColumn));
+          if (!matched) {
+            return null;
+          }
+
+          return {
+            sourceColumn: matched.sourceColumn,
+            confidence: clamp01(round2(confidence)),
+            sourceContextDocumentId: matched.sourceContextDocumentId,
+            matchMethod: "semantic_ai" as const,
+          };
+        })
+        .filter(
+          (
+            item,
+          ): item is {
+            sourceColumn: string;
+            confidence: number;
+            sourceContextDocumentId: string;
+            matchMethod: "semantic_ai";
+          } => Boolean(item),
+        )
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, maxSuggestionsPerColumn);
+
+      return { targetColumn, suggestions };
+    })
+    .filter(
+      (
+        hint,
+      ): hint is {
+        targetColumn: string;
+        suggestions: Array<{
+          sourceColumn: string;
+          confidence: number;
+          sourceContextDocumentId: string;
+          matchMethod: "semantic_ai";
+        }>;
+      } => Boolean(hint),
+    );
+
+  return { hints };
 }
 
 function extractDetectedColumns(contentJson: unknown): string[] {
   if (!contentJson || typeof contentJson !== "object") {
     return [];
   }
-
   const maybeColumns = (contentJson as { detectedColumns?: unknown }).detectedColumns;
   if (!Array.isArray(maybeColumns)) {
     return [];
   }
-
   return maybeColumns.filter((value): value is string => typeof value === "string");
 }
 
-function dedupeBestByColumn(
-  candidates: Array<{
-    sourceColumn: string;
-    sourceContextDocumentId: string;
-    truthTier: "tier0" | "tier1" | "tier2" | "tier3";
-  }>,
-) {
-  const byNormalized = new Map<
-    string,
-    {
-      sourceColumn: string;
-      sourceContextDocumentId: string;
-      truthTier: "tier0" | "tier1" | "tier2" | "tier3";
-    }
-  >();
-
-  for (const candidate of candidates) {
-    const key = normalizeColumn(candidate.sourceColumn);
-    const existing = byNormalized.get(key);
-
-    if (!existing || truthTierWeight(candidate.truthTier) > truthTierWeight(existing.truthTier)) {
-      byNormalized.set(key, candidate);
-    }
-  }
-
-  return Array.from(byNormalized.values());
-}
-
-function scoreCandidate(
-  targetColumn: string,
-  candidate: {
-    sourceColumn: string;
-    sourceContextDocumentId: string;
-    truthTier: "tier0" | "tier1" | "tier2" | "tier3";
-  },
-): ScoredCandidate {
-  const normalizedTarget = normalizeColumn(targetColumn);
-  const normalizedSource = normalizeColumn(candidate.sourceColumn);
-
-  if (!normalizedTarget || !normalizedSource) {
-    return {
-      sourceColumn: candidate.sourceColumn,
-      sourceContextDocumentId: candidate.sourceContextDocumentId,
-      confidence: 0,
-      matchMethod: "none",
-    };
-  }
-
-  let baseScore = 0;
-  let matchMethod: MatchMethod = "none";
-
-  if (normalizedTarget === normalizedSource) {
-    baseScore = 1;
-    matchMethod = "exact";
-  } else if (
-    normalizedTarget.includes(normalizedSource) ||
-    normalizedSource.includes(normalizedTarget)
-  ) {
-    baseScore = 0.82;
-    matchMethod = "substring";
-  } else {
-    const overlap = tokenOverlap(normalizedTarget, normalizedSource);
-    if (overlap >= 0.34) {
-      baseScore = 0.55 + overlap * 0.35;
-      matchMethod = "token_overlap";
-    }
-  }
-
-  const confidence = clamp01(round2(baseScore * truthTierWeight(candidate.truthTier)));
-  if (confidence < 0.35 || matchMethod === "none") {
-    return {
-      sourceColumn: candidate.sourceColumn,
-      sourceContextDocumentId: candidate.sourceContextDocumentId,
-      confidence: 0,
-      matchMethod: "none",
-    };
-  }
-
-  return {
-    sourceColumn: candidate.sourceColumn,
-    sourceContextDocumentId: candidate.sourceContextDocumentId,
-    confidence,
-    matchMethod,
-  };
-}
-
-function isColumnHintSuggestion(candidate: ScoredCandidate): candidate is ColumnHintSuggestion {
-  return candidate.matchMethod !== "none";
-}
-
-function normalizeColumn(value: string): string {
+function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function tokenOverlap(left: string, right: string): number {
-  const leftTokens = new Set(left.split(" ").filter(Boolean));
-  const rightTokens = new Set(right.split(" ").filter(Boolean));
-
-  if (leftTokens.size === 0 || rightTokens.size === 0) {
-    return 0;
-  }
-
-  let overlapCount = 0;
-  for (const token of leftTokens) {
-    if (rightTokens.has(token)) {
-      overlapCount += 1;
-    }
-  }
-
-  return overlapCount / Math.max(leftTokens.size, rightTokens.size);
-}
-
-function truthTierWeight(tier: "tier0" | "tier1" | "tier2" | "tier3"): number {
-  switch (tier) {
-    case "tier0":
-      return 1;
-    case "tier1":
-      return 0.92;
-    case "tier2":
-      return 0.82;
-    case "tier3":
-      return 0.7;
-    default:
-      return 0.7;
-  }
 }
 
 function round2(value: number): number {
