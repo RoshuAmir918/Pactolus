@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useSetAtom } from "jotai";
 import { MoreHorizontal, Plus } from "lucide-react";
 
 import {
@@ -29,7 +29,14 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import { demoOrgsAtom, type DemoOrg } from "@/stores/workspace";
+import { trpc } from "@/lib/trpc";
+import {
+  demoOrgsAtom,
+  type DemoOrg,
+  loadWorkspaceAtom,
+  workspaceLoadErrorAtom,
+  workspaceLoadStatusAtom,
+} from "@/stores/workspace";
 import {
   activeClientIdAtom,
   activeSnapshotIdAtom,
@@ -72,7 +79,7 @@ function fuzzyMatch(query: string, text: string) {
 }
 
 function findOrg(orgs: DemoOrg[], orgId: string): DemoOrg | undefined {
-  return orgs.find((org) => org.id === orgId) ?? orgs[0];
+  return orgs.find((org) => org.id === orgId);
 }
 
 function firstSnapshotId(org: DemoOrg): string | undefined {
@@ -129,8 +136,8 @@ function loadViewsForSpace(spaceId: string, orgs: DemoOrg[]): ClientView[] {
         if (!org) {
           return {
             id: v.id ?? `view-${index}`,
-            orgId: "",
-            snapshotId: undefined,
+            orgId: v.orgId,
+            snapshotId: v.snapshotId,
             openFolders: v.openFolders ?? {},
             collapsed: v.collapsed ?? false,
           };
@@ -161,7 +168,10 @@ function loadViewsForSpace(spaceId: string, orgs: DemoOrg[]): ClientView[] {
   }
 
 export function WorkspaceSidebar() {
-  const [demoOrgs, setDemoOrgs] = useAtom(demoOrgsAtom);
+  const [demoOrgs] = useAtom(demoOrgsAtom);
+  const reloadWorkspace = useSetAtom(loadWorkspaceAtom);
+  const [workspaceLoadStatus] = useAtom(workspaceLoadStatusAtom);
+  const [workspaceLoadError] = useAtom(workspaceLoadErrorAtom);
   const [leftPaneMode, setLeftPaneMode] = useAtom(leftPaneModeAtom);
   const [activeClientId] = useAtom(activeClientIdAtom);
   const [activeSnapshotId] = useAtom(activeSnapshotIdAtom);
@@ -201,6 +211,8 @@ export function WorkspaceSidebar() {
   const [createSnapshotDialogOpen, setCreateSnapshotDialogOpen] = useState(false);
   const [createSnapshotClientId, setCreateSnapshotClientId] = useState("");
   const [createSnapshotName, setCreateSnapshotName] = useState("");
+  const [createSnapshotError, setCreateSnapshotError] = useState<string | null>(null);
+  const [createSnapshotSubmitting, setCreateSnapshotSubmitting] = useState(false);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -399,58 +411,6 @@ export function WorkspaceSidebar() {
     return `${month} ${year}`;
   };
 
-  const createSnapshotForOrg = (orgId: string, customName?: string) => {
-    const org = findOrg(demoOrgs, orgId);
-    if (!org) return;
-
-    const snapshotName = customName?.trim() || buildDefaultSnapshotName(org.snapshots.length);
-    const snapshotId = `${org.id}-snapshot-${Date.now()}`;
-
-    setDemoOrgs((prev) =>
-      prev.map((candidate) =>
-        candidate.id === org.id
-          ? {
-              ...candidate,
-              snapshots: [
-                {
-                  id: snapshotId,
-                  name: snapshotName,
-                  sections: [
-                    {
-                      id: "raw-data",
-                      name: "Raw data",
-                      files: [
-                        {
-                          id: `${snapshotId}-raw-1`,
-                          name: "raw_extract.xlsx",
-                        },
-                        {
-                          id: `${snapshotId}-raw-2`,
-                          name: "claims_extract.csv",
-                        },
-                      ],
-                    },
-                    {
-                      id: "runs",
-                      name: "Runs",
-                      files: [{ id: `${snapshotId}-run-1`, name: "scenario_run.csv" }],
-                    },
-                    {
-                      id: "notes",
-                      name: "Notes",
-                      files: [{ id: `${snapshotId}-note-1`, name: "notes.csv" }],
-                    },
-                  ],
-                },
-                ...candidate.snapshots,
-              ],
-            }
-          : candidate,
-      ),
-    );
-    setHeaderMenuOpen(false);
-  };
-
   const headerClientTargets = useMemo(() => {
     const seen = new Set<string>();
     const ordered: DemoOrg[] = [];
@@ -469,16 +429,62 @@ export function WorkspaceSidebar() {
       setHeaderMenuOpen(false);
       return;
     }
+    setCreateSnapshotError(null);
     setCreateSnapshotClientId(firstClient.id);
     setCreateSnapshotName(buildDefaultSnapshotName(firstClient.snapshots.length));
     setHeaderMenuOpen(false);
     setCreateSnapshotDialogOpen(true);
   };
 
-  const handleSubmitCreateSnapshot = () => {
+  const handleSubmitCreateSnapshot = async () => {
     if (!createSnapshotClientId) return;
-    createSnapshotForOrg(createSnapshotClientId, createSnapshotName);
-    setCreateSnapshotDialogOpen(false);
+    const client = findOrg(demoOrgs, createSnapshotClientId);
+    if (!client) {
+      setCreateSnapshotError("Selected client is unavailable.");
+      return;
+    }
+
+    const snapshotLabel =
+      createSnapshotName.trim() || buildDefaultSnapshotName(client.snapshots.length);
+
+    setCreateSnapshotError(null);
+    setCreateSnapshotSubmitting(true);
+    try {
+      const created = await trpc.ingestion.createSnapshot.mutate({
+        clientId: createSnapshotClientId,
+        label: snapshotLabel,
+      });
+
+      setViews((prev) => {
+        let updated = false;
+        const next = prev.map((view) => {
+          if (!updated && view.orgId === createSnapshotClientId) {
+            updated = true;
+            return { ...view, snapshotId: created.snapshotId };
+          }
+          return view;
+        });
+        return next;
+      });
+      setActiveSelection((prev) => {
+        if (prev) {
+          return { ...prev, snapshotId: created.snapshotId };
+        }
+        const targetView = views.find((view) => view.orgId === createSnapshotClientId);
+        return targetView
+          ? { viewId: targetView.id, snapshotId: created.snapshotId }
+          : undefined;
+      });
+
+      await reloadWorkspace();
+      setCreateSnapshotDialogOpen(false);
+    } catch (error) {
+      setCreateSnapshotError(
+        error instanceof Error ? error.message : "Failed to create snapshot.",
+      );
+    } finally {
+      setCreateSnapshotSubmitting(false);
+    }
   };
 
   const selectedClient = activeClientId ? findOrg(demoOrgs, activeClientId) : undefined;
@@ -487,6 +493,8 @@ export function WorkspaceSidebar() {
   );
   const showSnapshotExplorer =
     leftPaneMode === "snapshot" && Boolean(selectedClient && selectedSnapshot);
+  const loadingWorkspace = workspaceLoadStatus === "loading";
+  const hasWorkspaceError = workspaceLoadStatus === "error" && Boolean(workspaceLoadError);
 
   const topHeader = showSnapshotExplorer && selectedClient && selectedSnapshot ? (
     <SidebarPaneHeader
@@ -638,6 +646,16 @@ export function WorkspaceSidebar() {
             </div>
           ) : (
             <div className="flex-1 overflow-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              {loadingWorkspace && (
+                <div className="px-3 pb-2 pt-1 text-xs text-muted-foreground">
+                  Loading workspace clients...
+                </div>
+              )}
+              {hasWorkspaceError && (
+                <div className="px-3 pb-2 pt-1 text-xs text-destructive">
+                  {workspaceLoadError}
+                </div>
+              )}
               <SidebarGroup>
                 <SidebarGroupContent>
                   <SidebarMenu className="space-y-2.5">
@@ -805,19 +823,23 @@ export function WorkspaceSidebar() {
                     placeholder="June 2026"
                   />
                 </div>
+                {createSnapshotError && (
+                  <p className="text-xs text-destructive">{createSnapshotError}</p>
+                )}
               </div>
               <div className="mt-4 flex items-center justify-end gap-2">
                 <Button
                   variant="ghost"
                   onClick={() => setCreateSnapshotDialogOpen(false)}
+                  disabled={createSnapshotSubmitting}
                 >
                   Cancel
                 </Button>
                 <Button
                   onClick={handleSubmitCreateSnapshot}
-                  disabled={!createSnapshotClientId}
+                  disabled={!createSnapshotClientId || createSnapshotSubmitting}
                 >
-                  Create snapshot
+                  {createSnapshotSubmitting ? "Creating..." : "Create snapshot"}
                 </Button>
               </div>
             </div>

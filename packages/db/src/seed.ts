@@ -7,9 +7,12 @@ import {
     memberships,
     organizations,
     clients,
+    snapshots,
     users,
+    type SelectClient,
     type SelectMembership,
     type SelectOrganization,
+    type SelectSnapshot,
     type SelectUser,
 } from "./schema";
 
@@ -144,11 +147,82 @@ async function seedClientsForOrganization(orgId: string): Promise<void> {
         .onConflictDoNothing();
 }
 
+async function getOrCreateClient(
+    orgId: string,
+    name: string,
+): Promise<SelectClient> {
+    const [existingClient] = await db
+        .select()
+        .from(clients)
+        .where(and(eq(clients.orgId, orgId), eq(clients.name, name)))
+        .limit(1);
+
+    if (existingClient) {
+        return existingClient;
+    }
+
+    const [createdClient] = await db
+        .insert(clients)
+        .values({
+            orgId,
+            name,
+        })
+        .returning();
+
+    return createdClient;
+}
+
+async function getOrCreateSnapshotForClient(
+    orgId: string,
+    clientId: string,
+    createdByUserId: string,
+): Promise<SelectSnapshot> {
+    const label = "Q4 2025 Baseline Snapshot";
+    const accountingPeriod = "2025-Q4";
+
+    const [existingSnapshot] = await db
+        .select()
+        .from(snapshots)
+        .where(
+            and(
+                eq(snapshots.orgId, orgId),
+                eq(snapshots.clientId, clientId),
+                eq(snapshots.label, label),
+            ),
+        )
+        .limit(1);
+
+    if (existingSnapshot) {
+        return existingSnapshot;
+    }
+
+    const [createdSnapshot] = await db
+        .insert(snapshots)
+        .values({
+            orgId,
+            clientId,
+            createdByUserId,
+            label,
+            accountingPeriod,
+            status: "ready",
+        })
+        .returning();
+
+    return createdSnapshot;
+}
+
 async function main(): Promise<void> {
     const org = await getOrCreateOrganization();
     const user = await getOrCreateUser();
     const membership = await getOrCreateMembership(user.id, org.id);
     await seedClientsForOrganization(org.id);
+    const fakeClientA = await getOrCreateClient(org.id, "Northstar Mutual");
+    const fakeClientB = await getOrCreateClient(org.id, "Blue Harbor Re");
+    const fakeSnapshot = await getOrCreateSnapshotForClient(
+        org.id,
+        fakeClientA.id,
+        user.id,
+    );
 
     console.log("Seed complete");
     console.log({
@@ -170,6 +244,29 @@ async function main(): Promise<void> {
             orgId: membership.orgId,
             role: membership.role,
             status: membership.status,
+        },
+        fakeClients: [
+            {
+                id: fakeClientA.id,
+                orgId: fakeClientA.orgId,
+                name: fakeClientA.name,
+                status: fakeClientA.status,
+            },
+            {
+                id: fakeClientB.id,
+                orgId: fakeClientB.orgId,
+                name: fakeClientB.name,
+                status: fakeClientB.status,
+            },
+        ],
+        fakeSnapshot: {
+            id: fakeSnapshot.id,
+            orgId: fakeSnapshot.orgId,
+            clientId: fakeSnapshot.clientId,
+            createdByUserId: fakeSnapshot.createdByUserId,
+            label: fakeSnapshot.label,
+            accountingPeriod: fakeSnapshot.accountingPeriod,
+            status: fakeSnapshot.status,
         },
     });
 }

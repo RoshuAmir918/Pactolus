@@ -1,1 +1,1 @@
-export { WorkspaceLayout } from "./workspace-layout";
+export { WorkspaceLayout } from "./layout/workspace-layout";

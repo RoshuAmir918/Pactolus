@@ -1,6 +1,9 @@
 "use client";
 
 import { atom } from "jotai";
+import { getMe } from "@/lib/auth-client";
+import { trpc } from "@/lib/trpc";
+import { authUserAtom } from "@/stores/auth";
 
 export type WorkspaceFile = {
   id: string;
@@ -241,3 +244,71 @@ const INITIAL_DEMO_ORGS: DemoOrg[] = [
 ];
 
 export const demoOrgsAtom = atom<DemoOrg[]>(INITIAL_DEMO_ORGS);
+export type WorkspaceLoadStatus = "idle" | "loading" | "ready" | "error";
+
+export const workspaceLoadStatusAtom = atom<WorkspaceLoadStatus>("idle");
+export const workspaceLoadErrorAtom = atom<string | null>(null);
+
+function buildEmptySnapshotSections(): WorkspaceSection[] {
+  return [
+    { id: "raw-data", name: "Raw data", files: [] },
+    { id: "runs", name: "Runs", files: [] },
+    { id: "notes", name: "Notes", files: [] },
+  ];
+}
+
+async function fetchWorkspaceOrgsForUser(): Promise<DemoOrg[]> {
+  const clients = await trpc.organizations.myClients.query();
+  const snapshots = await trpc.organizations.mySnapshots.query();
+  const snapshotsByClientId = new Map<string, typeof snapshots>();
+
+  for (const snapshot of snapshots) {
+    const current = snapshotsByClientId.get(snapshot.clientId) ?? [];
+    current.push(snapshot);
+    snapshotsByClientId.set(snapshot.clientId, current);
+  }
+
+  return clients.map((client) => ({
+    id: client.id,
+    name: client.name,
+    plan: "Team",
+    snapshots: (snapshotsByClientId.get(client.id) ?? []).map((snapshot) => ({
+      id: snapshot.id,
+      name: snapshot.label,
+      sections: buildEmptySnapshotSections(),
+    })),
+  }));
+}
+
+export const loadWorkspaceAtom = atom(null, async (get, set) => {
+  const status = get(workspaceLoadStatusAtom);
+  if (status === "loading") {
+    return;
+  }
+
+  set(workspaceLoadStatusAtom, "loading");
+  set(workspaceLoadErrorAtom, null);
+
+  try {
+    let user = get(authUserAtom);
+    if (!user) {
+      user = await getMe();
+      set(authUserAtom, user);
+    }
+
+    if (!user) {
+      set(demoOrgsAtom, []);
+      set(workspaceLoadStatusAtom, "error");
+      set(workspaceLoadErrorAtom, "You must be logged in to load workspace clients.");
+      return;
+    }
+
+    const orgs = await fetchWorkspaceOrgsForUser();
+    set(demoOrgsAtom, orgs);
+    set(workspaceLoadStatusAtom, "ready");
+  } catch (error) {
+    set(workspaceLoadStatusAtom, "error");
+    set(workspaceLoadErrorAtom, error instanceof Error ? error.message : "Failed to load workspace data.");
+    set(demoOrgsAtom, INITIAL_DEMO_ORGS);
+  }
+});

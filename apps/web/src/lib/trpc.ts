@@ -17,6 +17,44 @@ export type AuthTRPC = {
     me: { query: () => Promise<AuthUser | null> };
     logout: { mutate: () => Promise<{ ok: true }> };
   };
+  organizations: {
+    myOrg: {
+      query: () => Promise<{ id: string; name: string; status: string } | null>;
+    };
+    myClients: {
+      query: () => Promise<
+        Array<{
+          id: string;
+          name: string;
+          status: "active" | "archived";
+        }>
+      >;
+    };
+    mySnapshots: {
+      query: () => Promise<
+        Array<{
+          id: string;
+          clientId: string;
+          label: string;
+          accountingPeriod: string | null;
+          status: "draft" | "ingesting" | "ready" | "failed";
+          createdAt: Date;
+        }>
+      >;
+    };
+  };
+  ingestion: {
+    createSnapshot: {
+      mutate: (input: {
+        clientId?: string;
+        label: string;
+        accountingPeriod?: string;
+      }) => Promise<{
+        snapshotId: string;
+        status: "draft" | "ingesting" | "ready" | "failed";
+      }>;
+    };
+  };
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

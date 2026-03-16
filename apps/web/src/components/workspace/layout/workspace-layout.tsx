@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { WorkspaceContentArea } from "@/components/workspace/content/workspace-content-area";
 import { WorkspaceSidebar } from "@/components/workspace/sidebar/workspace-sidebar";
+import { useWorkspaceBootstrap } from "@/hooks/use-workspace-bootstrap";
+
 type WorkspaceLayoutProps = {
   /** Main content to the right of the sidebar */
   children: React.ReactNode;
@@ -22,25 +23,14 @@ export function WorkspaceLayout({
   title = "Workspace",
   headerActions,
 }: WorkspaceLayoutProps) {
+  useWorkspaceBootstrap();
+
   return (
     <SidebarProvider>
       <WorkspaceSidebar />
-
-      <SidebarInset>
-        <header className="flex items-center justify-between border-b px-4 py-3">
-          <div className="flex items-center gap-2">
-            <SidebarTrigger />
-            <h1 className="text-lg font-semibold">{title}</h1>
-          </div>
-          {headerActions ?? (
-            <Button asChild variant="outline">
-              <Link href="/">Home</Link>
-            </Button>
-          )}
-        </header>
-
-        <main className="p-4">{children}</main>
-      </SidebarInset>
+      <WorkspaceContentArea title={title} headerActions={headerActions}>
+        {children}
+      </WorkspaceContentArea>
     </SidebarProvider>
   );
 }
