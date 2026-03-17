@@ -37,7 +37,7 @@ export const createBranchOutputSchema = z.object({
 export const appendStepInputSchema = z.object({
   runId: z.uuid(),
   branchId: z.uuid().optional(),
-  snapshotInputId: z.uuid().optional(),
+  documentId: z.uuid().optional(),
   stepType: runStepTypeSchema,
   idempotencyKey: z.string().min(1).optional(),
   parentStepId: z.uuid().optional(),
@@ -87,7 +87,7 @@ export const getBranchEffectiveHistoryOutputSchema = z.object({
       id: z.uuid(),
       runId: z.uuid(),
       branchId: z.uuid(),
-      snapshotInputId: z.uuid().nullable(),
+      documentId: z.uuid().nullable(),
       stepIndex: z.number().int().positive(),
       parentStepId: z.uuid().nullable(),
       stepType: runStepTypeSchema,

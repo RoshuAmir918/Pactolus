@@ -7,7 +7,7 @@ type DbLike = NodePgDatabase<Record<string, never>>;
 type AppendRunStepInput = {
   runId: string;
   branchId?: string;
-  snapshotInputId?: string;
+  documentId?: string;
   stepType: typeof runOperations.$inferInsert.stepType;
   actorType: typeof runOperations.$inferInsert.actorType;
   actorId?: string | null;
@@ -92,7 +92,7 @@ export async function appendRunStep(
       .values({
         runId: input.runId,
         branchId,
-        snapshotInputId: input.snapshotInputId,
+        documentId: input.documentId,
         stepIndex: nextStep?.stepIndex ?? 1,
         stepType: input.stepType,
         actorType: input.actorType,

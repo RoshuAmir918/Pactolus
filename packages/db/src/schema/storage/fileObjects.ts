@@ -36,6 +36,7 @@ export const fileObjects = pgTable(
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     sha256: text("sha256"),
     status: fileObjectStatusEnum("status").notNull().default("ready"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     uploadedByUserId: uuid("uploaded_by_user_id")
       .notNull()
       .references(() => users.id),

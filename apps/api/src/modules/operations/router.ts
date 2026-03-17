@@ -56,7 +56,7 @@ export const operationsRouter = router({
         userId: ctx.userId,
         runId: input.runId,
         branchId: input.branchId,
-        snapshotInputId: input.snapshotInputId,
+        documentId: input.documentId,
         stepType: input.stepType,
         idempotencyKey: input.idempotencyKey,
         parentStepId: input.parentStepId,
