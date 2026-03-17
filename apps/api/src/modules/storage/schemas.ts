@@ -37,3 +37,17 @@ export const getDownloadUrlOutputSchema = z.object({
   downloadUrl: z.string().url(),
   expiresAt: z.date(),
 });
+
+export const listBySnapshotInputSchema = z.object({
+  snapshotId: z.uuid(),
+});
+
+export const listBySnapshotOutputSchema = z.array(
+  z.object({
+    id: z.string().uuid(),
+    fileName: z.string(),
+    contentType: z.string(),
+    sizeBytes: z.number(),
+    createdAt: z.date(),
+  }),
+);

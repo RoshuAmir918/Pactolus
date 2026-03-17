@@ -55,6 +55,43 @@ export type AuthTRPC = {
       }>;
     };
   };
+  storage: {
+    getUploadUrl: {
+      mutate: (input: {
+        snapshotId: string;
+        fileName: string;
+        contentType: string;
+        sizeBytes: number;
+      }) => Promise<{
+        bucket: string;
+        objectKey: string;
+        uploadUrl: string;
+        expiresAt: Date;
+      }>;
+    };
+    completeUpload: {
+      mutate: (input: {
+        snapshotId: string;
+        bucket: string;
+        objectKey: string;
+        fileName: string;
+        contentType: string;
+        sizeBytes: number;
+        sha256?: string;
+      }) => Promise<{ fileObjectId: string; status: string }>;
+    };
+    listBySnapshot: {
+      query: (input: { snapshotId: string }) => Promise<
+        Array<{
+          id: string;
+          fileName: string;
+          contentType: string;
+          sizeBytes: number;
+          createdAt: Date;
+        }>
+      >;
+    };
+  };
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

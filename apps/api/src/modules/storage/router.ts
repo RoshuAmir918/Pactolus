@@ -6,10 +6,13 @@ import {
   getDownloadUrlOutputSchema,
   getUploadUrlInputSchema,
   getUploadUrlOutputSchema,
+  listBySnapshotInputSchema,
+  listBySnapshotOutputSchema,
 } from "./schemas";
 import { completeUpload, type CompleteUploadResult } from "./services/completeUpload";
 import { getDownloadUrl, type GetDownloadUrlResult } from "./services/getDownloadUrl";
 import { getUploadUrl, type GetUploadUrlResult } from "./services/getUploadUrl";
+import { listBySnapshot, type ListBySnapshotResult } from "./services/listBySnapshot";
 import { assertSnapshotAccess } from "@api/modules/guards/services/assertSnapshotAccess";
 
 export const storageRouter = router({
@@ -56,6 +59,20 @@ export const storageRouter = router({
         fileObjectId: input.fileObjectId,
       }),
     ),
+
+  listBySnapshot: authenticatedProcedure
+    .input(listBySnapshotInputSchema)
+    .output(listBySnapshotOutputSchema)
+    .query(async ({ ctx, input }): Promise<ListBySnapshotResult> => {
+      await assertSnapshotAccess({
+        snapshotId: input.snapshotId,
+        orgId: ctx.orgId,
+      });
+      return listBySnapshot({
+        orgId: ctx.orgId,
+        snapshotId: input.snapshotId,
+      });
+    }),
 });
 
 export type StorageRouter = typeof storageRouter;

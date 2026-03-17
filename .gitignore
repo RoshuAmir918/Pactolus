@@ -1,2 +1,5 @@
 node_modules/
 .env
+
+packages/db/migrations/**/*.sql
+packages/db/migrations/meta/**/*.json

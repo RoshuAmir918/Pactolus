@@ -47,6 +47,9 @@ app.use(
       res,
       user: await resolveContextOptional(req),
     }),
+    onError({ path, error }) {
+      console.error("[tRPC]", path, error.message, error.cause ?? "");
+    },
   }),
 );
 
