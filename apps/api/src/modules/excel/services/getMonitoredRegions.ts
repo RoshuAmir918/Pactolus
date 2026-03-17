@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import dbClient from "@api/db/client";
 import { excelMonitoredRegions } from "@db/schema";
-import { assertSnapshotAccess } from "./assertSnapshotAccess";
+import { assertSnapshotAccess } from "@api/modules/guards/services/assertSnapshotAccess";
 
 const { db } = dbClient;
 

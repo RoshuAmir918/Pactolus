@@ -14,3 +14,4 @@ export * from "./policiesCanonical";
 export * from "./ingestionErrors";
 export * from "./context";
 export * from "./excel";
+export * from "./storage";

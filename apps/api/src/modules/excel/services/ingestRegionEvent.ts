@@ -1,4 +1,4 @@
-import { assertSnapshotAccess } from "./assertSnapshotAccess";
+import { assertSnapshotAccess } from "@api/modules/guards/services/assertSnapshotAccess";
 
 export type IngestRegionEventInput = {
   orgId: string;

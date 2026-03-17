@@ -8,9 +8,9 @@ const { db } = dbClient;
 export async function assertSnapshotAccess(input: {
   snapshotId: string;
   orgId: string;
-}): Promise<void> {
+}): Promise<typeof snapshots.$inferSelect> {
   const [snapshot] = await db
-    .select({ id: snapshots.id })
+    .select()
     .from(snapshots)
     .where(and(eq(snapshots.id, input.snapshotId), eq(snapshots.orgId, input.orgId)))
     .limit(1);
@@ -21,4 +21,6 @@ export async function assertSnapshotAccess(input: {
       message: "Snapshot not found for this organization",
     });
   }
+
+  return snapshot;
 }
