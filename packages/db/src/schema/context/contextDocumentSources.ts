@@ -2,12 +2,11 @@ import { index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } fro
 import { contextDocuments } from "./contextDocuments";
 
 export const contextSourceTypeEnum = pgEnum("context_source_type", [
-  "snapshot_input",
-  "raw_row",
+  "document",
+  "document_sheet",
+  "document_triangle",
   "run_step",
   "run_step_artifact",
-  "canonical_claim",
-  "canonical_policy",
   "external_reference",
 ]);
 

@@ -26,6 +26,7 @@ export const completeUploadInputSchema = z.object({
 
 export const completeUploadOutputSchema = z.object({
   fileObjectId: z.uuid(),
+  documentId: z.uuid(),
   status: z.enum(["pending", "ready", "failed", "deleted"]),
 });
 

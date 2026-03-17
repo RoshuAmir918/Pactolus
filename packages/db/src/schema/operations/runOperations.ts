@@ -1,5 +1,5 @@
 import { foreignKey, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import { snapshotInputs } from "../snapshotInputs";
+import { documents } from "../storage/documents";
 import { users } from "../users";
 import { runBranches } from "./runBranches";
 import { runs } from "./runs";
@@ -17,8 +17,8 @@ export const runOperations = pgTable(
     runId: uuid("run_id")
       .notNull()
       .references(() => runs.id, { onDelete: "cascade" }),
-    snapshotInputId: uuid("snapshot_input_id").references(() => snapshotInputs.id, {
-      onDelete: "cascade",
+    documentId: uuid("document_id").references(() => documents.id, {
+      onDelete: "set null",
     }),
     branchId: uuid("branch_id")
       .notNull()
@@ -50,7 +50,7 @@ export const runOperations = pgTable(
       table.idempotencyKey,
     ),
     index("run_steps_run_id_idx").on(table.runId),
-    index("run_steps_snapshot_input_id_idx").on(table.snapshotInputId),
+    index("run_steps_document_id_idx").on(table.documentId),
     index("run_steps_branch_id_idx").on(table.branchId),
     index("run_steps_parent_step_id_idx").on(table.parentStepId),
     index("run_steps_step_type_idx").on(table.stepType),

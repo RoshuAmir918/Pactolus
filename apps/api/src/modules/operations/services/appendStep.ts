@@ -13,7 +13,7 @@ export type AppendStepInput = {
   userId: string;
   runId: string;
   branchId?: string;
-  snapshotInputId?: string;
+  documentId?: string;
   stepType: typeof runOperations.$inferInsert.stepType;
   idempotencyKey?: string;
   parentStepId?: string;
@@ -60,7 +60,7 @@ export async function appendStep(input: AppendStepInput): Promise<AppendStepResu
   const createdStep = await appendRunStep(db, {
     runId: input.runId,
     branchId: input.branchId,
-    snapshotInputId: input.snapshotInputId,
+    documentId: input.documentId,
     stepType: input.stepType,
     actorType: "user",
     actorId: input.userId,

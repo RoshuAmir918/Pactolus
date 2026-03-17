@@ -1,8 +1,7 @@
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
-import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import dbClient from "@api/db/client";
-import { fileObjects } from "@db/schema";
+import { documents, fileObjects, type InsertDocument } from "@db/schema";
 import { assertSnapshotAccess } from "@api/modules/guards/services/assertSnapshotAccess";
 import { s3Bucket, s3Client } from "./s3Client";
 
@@ -22,6 +21,7 @@ export type CompleteUploadInput = {
 
 export type CompleteUploadResult = {
   fileObjectId: string;
+  documentId: string;
   status: "pending" | "ready" | "failed" | "deleted";
 };
 
@@ -82,8 +82,59 @@ export async function completeUpload(input: CompleteUploadInput): Promise<Comple
     })
     .returning({ id: fileObjects.id, status: fileObjects.status });
 
+  const [document] = await db
+    .insert(documents)
+    .values(buildDocumentValues(input, stored.id))
+    .onConflictDoUpdate({
+      target: [documents.fileObjectId],
+      set: {
+        orgId: input.orgId,
+        snapshotId: input.snapshotId,
+        filename: input.fileName,
+        mimeType: input.contentType,
+        fileExtension: inferFileExtension(input.fileName),
+        s3Key: input.objectKey,
+        fileHash: input.sha256 ?? null,
+        fileSizeBytes: input.sizeBytes,
+        uploadedByUserId: input.userId,
+        uploadedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ id: documents.id });
+
   return {
     fileObjectId: stored.id,
+    documentId: document.id,
     status: stored.status,
   };
+}
+
+function buildDocumentValues(input: CompleteUploadInput, fileObjectId: string): InsertDocument {
+  return {
+    fileObjectId,
+    orgId: input.orgId,
+    snapshotId: input.snapshotId,
+    documentType: "other",
+    filename: input.fileName,
+    mimeType: input.contentType,
+    fileExtension: inferFileExtension(input.fileName),
+    s3Key: input.objectKey,
+    fileHash: input.sha256 ?? null,
+    fileSizeBytes: input.sizeBytes,
+    uploadedByUserId: input.userId,
+    uploadedAt: new Date(),
+    aiClassification: "unknown",
+    profileStatus: "pending",
+    aiStatus: "pending",
+  };
+}
+
+function inferFileExtension(fileName: string): string | null {
+  const parts = fileName.split(".");
+  if (parts.length < 2) {
+    return null;
+  }
+
+  return parts[parts.length - 1]?.toLowerCase() ?? null;
 }

@@ -19,6 +19,7 @@ CREATE TYPE "public"."context_truth_tier" AS ENUM('tier0', 'tier1', 'tier2', 'ti
 CREATE TYPE "public"."context_source_type" AS ENUM('snapshot_input', 'raw_row', 'run_step', 'run_step_artifact', 'canonical_claim', 'canonical_policy', 'external_reference');--> statement-breakpoint
 CREATE TYPE "public"."excel_monitored_region_status" AS ENUM('active', 'archived');--> statement-breakpoint
 CREATE TYPE "public"."excel_monitored_region_type" AS ENUM('input', 'output');--> statement-breakpoint
+CREATE TYPE "public"."file_object_status" AS ENUM('pending', 'ready', 'failed', 'deleted');--> statement-breakpoint
 CREATE TABLE "organizations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,
@@ -249,6 +250,23 @@ CREATE TABLE "excel_monitored_regions" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "file_objects" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"org_id" uuid NOT NULL,
+	"client_id" uuid,
+	"snapshot_id" uuid,
+	"bucket" text NOT NULL,
+	"object_key" text NOT NULL,
+	"file_name" text NOT NULL,
+	"content_type" text NOT NULL,
+	"size_bytes" bigint NOT NULL,
+	"sha256" text,
+	"status" "file_object_status" DEFAULT 'ready' NOT NULL,
+	"uploaded_by_user_id" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 ALTER TABLE "clients" ADD CONSTRAINT "clients_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "memberships" ADD CONSTRAINT "memberships_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "memberships" ADD CONSTRAINT "memberships_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -296,6 +314,10 @@ ALTER TABLE "context_document_sources" ADD CONSTRAINT "context_document_sources_
 ALTER TABLE "excel_monitored_regions" ADD CONSTRAINT "excel_monitored_regions_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "excel_monitored_regions" ADD CONSTRAINT "excel_monitored_regions_snapshot_id_snapshots_id_fk" FOREIGN KEY ("snapshot_id") REFERENCES "public"."snapshots"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "excel_monitored_regions" ADD CONSTRAINT "excel_monitored_regions_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "file_objects" ADD CONSTRAINT "file_objects_org_id_organizations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organizations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "file_objects" ADD CONSTRAINT "file_objects_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "file_objects" ADD CONSTRAINT "file_objects_snapshot_id_snapshots_id_fk" FOREIGN KEY ("snapshot_id") REFERENCES "public"."snapshots"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "file_objects" ADD CONSTRAINT "file_objects_uploaded_by_user_id_users_id_fk" FOREIGN KEY ("uploaded_by_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "organizations_status_idx" ON "organizations" USING btree ("status");--> statement-breakpoint
 CREATE UNIQUE INDEX "clients_org_name_unique" ON "clients" USING btree ("org_id","name");--> statement-breakpoint
 CREATE INDEX "clients_org_id_idx" ON "clients" USING btree ("org_id");--> statement-breakpoint
@@ -376,4 +398,10 @@ CREATE INDEX "excel_monitored_regions_org_id_idx" ON "excel_monitored_regions" U
 CREATE INDEX "excel_monitored_regions_snapshot_id_idx" ON "excel_monitored_regions" USING btree ("snapshot_id");--> statement-breakpoint
 CREATE INDEX "excel_monitored_regions_sheet_name_idx" ON "excel_monitored_regions" USING btree ("sheet_name");--> statement-breakpoint
 CREATE INDEX "excel_monitored_regions_region_type_idx" ON "excel_monitored_regions" USING btree ("region_type");--> statement-breakpoint
-CREATE INDEX "excel_monitored_regions_status_idx" ON "excel_monitored_regions" USING btree ("status");
+CREATE INDEX "excel_monitored_regions_status_idx" ON "excel_monitored_regions" USING btree ("status");--> statement-breakpoint
+CREATE UNIQUE INDEX "file_objects_bucket_object_key_unique" ON "file_objects" USING btree ("bucket","object_key");--> statement-breakpoint
+CREATE INDEX "file_objects_org_id_idx" ON "file_objects" USING btree ("org_id");--> statement-breakpoint
+CREATE INDEX "file_objects_snapshot_id_idx" ON "file_objects" USING btree ("snapshot_id");--> statement-breakpoint
+CREATE INDEX "file_objects_client_id_idx" ON "file_objects" USING btree ("client_id");--> statement-breakpoint
+CREATE INDEX "file_objects_status_idx" ON "file_objects" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "file_objects_uploaded_by_user_id_idx" ON "file_objects" USING btree ("uploaded_by_user_id");
