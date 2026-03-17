@@ -5,20 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-<<<<<<< HEAD
-      "when": 1773712417710,
-      "tag": "0000_lazy_jack_murdock",
-=======
-      "when": 1773709440088,
-      "tag": "0000_skinny_kylun",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1773712485972,
-      "tag": "0001_typical_vapor",
->>>>>>> c87c2dd85cf9a60fbba71eb1f8847567cbc2be80
+      "when": 1773713703242,
+      "tag": "0000_lethal_fantastic_four",
       "breakpoints": true
     }
   ]

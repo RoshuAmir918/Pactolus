@@ -12,7 +12,8 @@
       "@api/*": ["apps/api/src/*"],
       "@db/*": ["packages/db/src/*"],
       "@worker/*": ["apps/worker/src/*"]
-    }
+    },
+    "typeRoots": ["./types", "./node_modules/@types"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "types/**/*.d.ts"]
 }

@@ -91,6 +91,12 @@ export type AuthTRPC = {
         }>
       >;
     };
+    deleteFile: {
+      mutate: (input: { fileObjectId: string }) => Promise<{
+        fileObjectId: string;
+        status: string;
+      }>;
+    };
   };
 };
 

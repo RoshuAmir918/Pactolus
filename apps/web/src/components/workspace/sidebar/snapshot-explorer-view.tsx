@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { FileText, Loader2, Upload } from "lucide-react";
+import { FileText, Loader2, Trash2, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,12 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { trpc } from "@/lib/trpc";
 import type { WorkspaceFile, WorkspaceSnapshot } from "@/stores/workspace";
 
@@ -36,6 +42,8 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
   const [listLoading, setListLoading] = useState(true);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadRawDataFiles = useCallback(async () => {
@@ -56,7 +64,21 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
 
   const handleUploadClick = () => {
     setUploadError(null);
+    setDeleteError(null);
     fileInputRef.current?.click();
+  };
+
+  const handleDeleteFile = async (fileId: string) => {
+    setDeleteError(null);
+    setDeletingId(fileId);
+    try {
+      await trpc.storage.deleteFile.mutate({ fileObjectId: fileId });
+      await loadRawDataFiles();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete file.");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -156,9 +178,11 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
                         </Button>
                       </SidebarMenuSubItem>
                     )}
-                    {isRawData && uploadError && (
+                    {isRawData && (uploadError || deleteError) && (
                       <SidebarMenuSubItem>
-                        <p className="px-5 py-1 text-xs text-destructive">{uploadError}</p>
+                        <p className="px-5 py-1 text-xs text-destructive">
+                          {uploadError ?? deleteError}
+                        </p>
                       </SidebarMenuSubItem>
                     )}
                     {isRawData && listLoading && files.length === 0 ? (
@@ -170,30 +194,43 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
                     ) : (
                       files.map((file) => (
                         <SidebarMenuSubItem key={file.id}>
-                          <SidebarMenuSubButton className="h-8 cursor-pointer rounded-none py-1.5 pl-5 text-xs">
-                            {fileIcon(file.name) === "csv" && (
-                              <Image
-                                src="/icons/csv.png"
-                                alt="CSV file"
-                                width={12}
-                                height={12}
-                                className="rounded-[3px]"
-                              />
-                            )}
-                            {fileIcon(file.name) === "xlsx" && (
-                              <Image
-                                src="/icons/xlsx.svg"
-                                alt="Excel file"
-                                width={12}
-                                height={12}
-                                className="rounded-[3px]"
-                              />
-                            )}
-                            {fileIcon(file.name) === "pbix" && (
-                              <FileText className="size-3 text-muted-foreground" />
-                            )}
-                            <span>{file.name}</span>
-                          </SidebarMenuSubButton>
+                          <ContextMenu>
+                            <ContextMenuTrigger asChild>
+                              <SidebarMenuSubButton className="h-8 cursor-pointer rounded-none py-1.5 pl-5 text-xs">
+                                {fileIcon(file.name) === "csv" && (
+                                  <Image
+                                    src="/icons/csv.png"
+                                    alt="CSV file"
+                                    width={12}
+                                    height={12}
+                                    className="rounded-[3px]"
+                                  />
+                                )}
+                                {fileIcon(file.name) === "xlsx" && (
+                                  <Image
+                                    src="/icons/xlsx.svg"
+                                    alt="Excel file"
+                                    width={12}
+                                    height={12}
+                                    className="rounded-[3px]"
+                                  />
+                                )}
+                                {fileIcon(file.name) === "pbix" && (
+                                  <FileText className="size-3 text-muted-foreground" />
+                                )}
+                                <span>{file.name}</span>
+                              </SidebarMenuSubButton>
+                            </ContextMenuTrigger>
+                            <ContextMenuContent>
+                              <ContextMenuItem
+                                disabled={deletingId === file.id}
+                                onSelect={() => handleDeleteFile(file.id)}
+                              >
+                                <Trash2 className="mr-2 size-3" />
+                                Delete file
+                              </ContextMenuItem>
+                            </ContextMenuContent>
+                          </ContextMenu>
                         </SidebarMenuSubItem>
                       ))
                     )}

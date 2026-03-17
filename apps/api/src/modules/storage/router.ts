@@ -2,6 +2,8 @@ import { authenticatedProcedure, router } from "@api/trpc/base";
 import {
   completeUploadInputSchema,
   completeUploadOutputSchema,
+  deleteFileInputSchema,
+  deleteFileOutputSchema,
   getDownloadUrlInputSchema,
   getDownloadUrlOutputSchema,
   getUploadUrlInputSchema,
@@ -13,6 +15,7 @@ import { completeUpload, type CompleteUploadResult } from "./services/completeUp
 import { getDownloadUrl, type GetDownloadUrlResult } from "./services/getDownloadUrl";
 import { getUploadUrl, type GetUploadUrlResult } from "./services/getUploadUrl";
 import { listBySnapshot, type ListBySnapshotResult } from "./services/listBySnapshot";
+import { deleteFileObject, type DeleteFileObjectResult } from "./services/deleteFileObject";
 import { assertSnapshotAccess } from "@api/modules/guards/services/assertSnapshotAccess";
 
 export const storageRouter = router({
@@ -73,6 +76,16 @@ export const storageRouter = router({
         snapshotId: input.snapshotId,
       });
     }),
+
+  deleteFile: authenticatedProcedure
+    .input(deleteFileInputSchema)
+    .output(deleteFileOutputSchema)
+    .mutation(async ({ ctx, input }): Promise<DeleteFileObjectResult> =>
+      deleteFileObject({
+        orgId: ctx.orgId,
+        fileObjectId: input.fileObjectId,
+      }),
+    ),
 });
 
 export type StorageRouter = typeof storageRouter;

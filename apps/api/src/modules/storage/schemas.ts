@@ -52,3 +52,12 @@ export const listBySnapshotOutputSchema = z.array(
     createdAt: z.date(),
   }),
 );
+
+export const deleteFileInputSchema = z.object({
+  fileObjectId: z.uuid(),
+});
+
+export const deleteFileOutputSchema = z.object({
+  fileObjectId: z.uuid(),
+  status: z.literal("deleted"),
+});

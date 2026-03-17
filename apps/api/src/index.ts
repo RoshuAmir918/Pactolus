@@ -2,13 +2,16 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
+import dbClient from "@api/db/client";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import "@api/auth/passport";
 import { resolveContextOptional } from "@api/auth/context";
 import { appRouter } from "@api/trpc/router";
 
 const app = express();
+const PgSessionStore = connectPgSimple(session);
 const sessionSecret =
   process.env.SESSION_SECRET ?? "dev-secret-change-in-production";
 
@@ -21,6 +24,11 @@ app.use(
 app.use(express.json());
 app.use(
   session({
+    store: new PgSessionStore({
+      pool: dbClient.pool,
+      tableName: "session",
+      createTableIfMissing: true,
+    }),
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
