@@ -45,6 +45,53 @@ async function getAllOrganizationIds() {
   }
 }
 
+async function getActiveAnthropicFileIds() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error(
+      "DATABASE_URL is required to fetch Anthropic file ids before wipe",
+    );
+  }
+
+  const pool = new pg.Pool({ connectionString });
+  try {
+    const result = await pool.query(
+      'select anthropic_file_id from "anthropic_files" where status = \'active\'',
+    );
+    return result.rows.map((row) => row.anthropic_file_id).filter(Boolean);
+  } catch {
+    console.warn(
+      "Could not read anthropic_files (possibly not migrated yet). Skipping Anthropic cleanup.",
+    );
+    return [];
+  } finally {
+    await pool.end();
+  }
+}
+
+async function deleteAnthropicFile(fileId) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY is required for Anthropic file cleanup");
+  }
+
+  const response = await fetch(`https://api.anthropic.com/v1/files/${fileId}`, {
+    method: "DELETE",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": "files-api-2025-04-14",
+    },
+  });
+
+  if (!response.ok && response.status !== 404) {
+    const body = await response.text();
+    throw new Error(
+      `Failed deleting Anthropic file ${fileId}: ${response.status} ${body}`,
+    );
+  }
+}
+
 function createS3Client() {
   const region = process.env.S3_REGION;
   const bucket = process.env.S3_BUCKET;
@@ -101,6 +148,27 @@ async function deleteOrgPrefix(s3Client, bucket, orgId) {
 }
 
 async function main() {
+  console.log("Collecting active Anthropic file IDs before DB reset...");
+  const anthropicFileIds = await getActiveAnthropicFileIds();
+  console.log(`Found ${anthropicFileIds.length} active Anthropic files`);
+
+  if (anthropicFileIds.length > 0) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.warn(
+        "ANTHROPIC_API_KEY missing; skipping Anthropic remote file deletion.",
+      );
+    } else {
+      for (const fileId of anthropicFileIds) {
+        try {
+          await deleteAnthropicFile(fileId);
+          console.log(`Deleted Anthropic file ${fileId}`);
+        } catch (err) {
+          console.warn(`Failed to delete Anthropic file ${fileId}:`, err);
+        }
+      }
+    }
+  }
+
   console.log("Collecting organization IDs before DB reset...");
   const orgIds = await getAllOrganizationIds();
   console.log(`Found ${orgIds.length} organizations`);

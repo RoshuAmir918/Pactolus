@@ -54,6 +54,50 @@ export type AuthTRPC = {
         status: "draft" | "ingesting" | "ready" | "failed";
       }>;
     };
+    startDocumentIngestion: {
+      mutate: (input: {
+        snapshotId: string;
+        documentId: string;
+      }) => Promise<{
+        documentId: string;
+        profileStatus: "pending" | "completed" | "failed";
+        aiStatus: "pending" | "completed" | "failed";
+        documentType: "claims" | "policies" | "loss_triangles" | "workbook_tool" | "other";
+        aiClassification:
+          | "claims"
+          | "policies"
+          | "loss_triangles"
+          | "workbook_tool"
+          | "other"
+          | "unknown";
+        sheetCount: number;
+        triangleCount: number;
+        insightCount: number;
+        errorText: string | null;
+      }>;
+    };
+    getDocumentIngestionStatus: {
+      query: (input: {
+        snapshotId: string;
+        documentId: string;
+      }) => Promise<{
+        documentId: string;
+        profileStatus: "pending" | "completed" | "failed";
+        aiStatus: "pending" | "completed" | "failed";
+        documentType: "claims" | "policies" | "loss_triangles" | "workbook_tool" | "other";
+        aiClassification:
+          | "claims"
+          | "policies"
+          | "loss_triangles"
+          | "workbook_tool"
+          | "other"
+          | "unknown";
+        sheetCount: number;
+        triangleCount: number;
+        insightCount: number;
+        errorText: string | null;
+      }>;
+    };
   };
   storage: {
     getUploadUrl: {
@@ -78,7 +122,7 @@ export type AuthTRPC = {
         contentType: string;
         sizeBytes: number;
         sha256?: string;
-      }) => Promise<{ fileObjectId: string; status: string }>;
+      }) => Promise<{ fileObjectId: string; documentId: string; status: string }>;
     };
     listBySnapshot: {
       query: (input: { snapshotId: string }) => Promise<

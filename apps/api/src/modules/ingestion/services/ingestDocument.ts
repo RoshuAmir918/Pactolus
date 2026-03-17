@@ -13,11 +13,15 @@ import {
   documents,
   documentTriangles,
   fileObjects,
+  anthropicFiles,
+  snapshotAnthropicFiles,
 } from "@db/schema";
 
 const { db } = dbClient;
 
 const MAX_CLAUDE_CONTRACT_FILE_BYTES = 8 * 1024 * 1024;
+const ANTHROPIC_FILES_BETA_HEADER = "files-api-2025-04-14";
+const DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
 
 type StartDocumentIngestionInput = {
   orgId: string;
@@ -89,6 +93,12 @@ export async function startDocumentIngestion(
       fileExtension: target.fileExtension ?? inferFileExtension(target.filename),
     });
 
+    await ensureAnthropicFileRegistered({
+      target,
+      deterministic,
+      localFilePath,
+    });
+
     await upsertSheetsFromDeterministic({
       target,
       deterministic,
@@ -102,7 +112,10 @@ export async function startDocumentIngestion(
         target,
         deterministic,
       });
-    } else if (deterministic.route === "hybrid_triangles") {
+    } else if (
+      deterministic.route === "hybrid_triangles" ||
+      deterministic.document.documentType === "loss_triangles"
+    ) {
       await processTriangleBranch({
         target,
         deterministic,
@@ -261,7 +274,24 @@ async function processTriangleBranch(input: {
     deterministic,
   });
   const sheetIds = await loadSheetIdsByIndex(target.documentId);
-  const triangles = deterministic.triangles
+  const aiTriangleResponse = await callClaude({
+    prompt: buildTriangleExtractionPrompt({
+      fileName: target.filename,
+      deterministicTriangles: deterministic.triangles,
+      deterministicSheets: deterministic.sheets,
+    }),
+    snapshotId: target.snapshotId,
+    includeSnapshotFiles: true,
+    maxTokens: 2200,
+  });
+  const parsedAiTriangles = parseJsonObject(aiTriangleResponse.text) as {
+    triangles?: unknown;
+    narrative?: unknown;
+  };
+
+  const aiTriangles = normalizeTrianglesFromClaude(parsedAiTriangles.triangles);
+  const candidateTriangles = aiTriangles.length > 0 ? aiTriangles : deterministic.triangles;
+  const triangles = candidateTriangles
     .map((triangle) => {
       const sheetIndex = asInteger((triangle as { sheetIndex?: unknown }).sheetIndex);
       if (sheetIndex === null) {
@@ -285,7 +315,7 @@ async function processTriangleBranch(input: {
             "reported",
             "ultimate",
             "unknown",
-          ]) ?? "unknown",
+          ] as const) ?? "unknown",
         rowStart: asInteger((triangle as { rowStart?: unknown }).rowStart),
         rowEnd: asInteger((triangle as { rowEnd?: unknown }).rowEnd),
         colStart: asInteger((triangle as { colStart?: unknown }).colStart),
@@ -302,17 +332,19 @@ async function processTriangleBranch(input: {
     await db.insert(documentTriangles).values(triangles);
   }
 
-  const narrative = await tryClaudeNarrative({
-    mode: "triangle_analysis",
-    payload: {
-      triangles: triangles.map((triangle) => ({
-        title: triangle.title,
-        segmentLabel: triangle.segmentLabel,
-        triangleType: triangle.triangleType,
-        normalizedTriangleJson: triangle.normalizedTriangleJson,
-      })),
-    },
-  });
+  const narrative =
+    asString(parsedAiTriangles.narrative) ??
+    (await tryClaudeNarrative({
+      mode: "triangle_analysis",
+      payload: {
+        triangles: triangles.map((triangle) => ({
+          title: triangle.title,
+          segmentLabel: triangle.segmentLabel,
+          triangleType: triangle.triangleType,
+          normalizedTriangleJson: triangle.normalizedTriangleJson,
+        })),
+      },
+    }));
 
   if (narrative) {
     await insertInsights(target, [
@@ -346,8 +378,16 @@ async function processContractBranch(input: {
     prompt: buildContractPrompt({
       fileName: target.filename,
       mimeType: target.mimeType,
+      deterministicContext: {
+        document: deterministic.document,
+        sheets: deterministic.sheets.slice(0, 8),
+        deterministic: deterministic.deterministic,
+      },
+      supplementalText: content.supplementalText,
     }),
-    contentBlocks: content,
+    contentBlocks: content.contentBlocks,
+    snapshotId: target.snapshotId,
+    includeSnapshotFiles: true,
     maxTokens: 1800,
   });
   const parsed = parseJsonObject(response.text) as {
@@ -573,13 +613,63 @@ function buildNarrativePrompt(mode: "deterministic_summary" | "triangle_analysis
   });
 }
 
-function buildContractPrompt(input: { fileName: string; mimeType: string }): string {
+function buildTriangleExtractionPrompt(input: {
+  fileName: string;
+  deterministicTriangles: Array<Record<string, unknown>>;
+  deterministicSheets: Array<Record<string, unknown>>;
+}): string {
+  return JSON.stringify({
+    task: "Extract all loss triangle blocks and segment labels from uploaded files.",
+    fileName: input.fileName,
+    deterministicContext: {
+      triangles: input.deterministicTriangles,
+      sheets: input.deterministicSheets,
+    },
+    instructions: [
+      "Use attached Anthropic file references as primary source.",
+      "Return one triangle object per detected segment/block.",
+      "Prefer sheetIndex values from deterministicContext.sheets when possible.",
+      "Return strict JSON only.",
+    ],
+    outputSchema: {
+      triangles: [
+        {
+          sheetIndex: 0,
+          title: "string|null",
+          segmentLabel: "string|null",
+          triangleType: "paid|incurred|reported|ultimate|unknown",
+          rowStart: 1,
+          rowEnd: 1,
+          colStart: 1,
+          colEnd: 1,
+          headerLabelsJson: {},
+          normalizedTriangleJson: {},
+          confidence: "number 0..1",
+        },
+      ],
+      narrative: "string",
+    },
+  });
+}
+
+function buildContractPrompt(input: {
+  fileName: string;
+  mimeType: string;
+  deterministicContext: unknown;
+  supplementalText: string | null;
+}): string {
   return JSON.stringify({
     task: "Extract treaty/contract terms and short narrative.",
-    file: input,
+    file: {
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+    },
+    deterministicContext: input.deterministicContext,
+    supplementalText: input.supplementalText,
     instructions: [
       "Return strict JSON only.",
       "Extract cedant/reinsurer, treaty type, lines, limits/retentions, attachment points, cession rates, period, notable clauses if present.",
+      "If supplementalText is present, use it as extra context.",
     ],
     outputSchema: {
       documentType: "claims|policies|loss_triangles|workbook_tool|other",
@@ -607,17 +697,25 @@ async function callClaude(input: {
   prompt: string;
   maxTokens: number;
   contentBlocks?: Array<Record<string, unknown>>;
+  snapshotId?: string;
+  includeSnapshotFiles?: boolean;
 }): Promise<ClaudeJsonResponse> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY is not configured");
   }
 
-  const model = process.env.CLAUDE_MODEL ?? "claude-3-5-sonnet-latest";
+  const model = resolveClaudeModel(process.env.CLAUDE_MODEL);
+  const snapshotFileBlocks =
+    input.includeSnapshotFiles && input.snapshotId
+      ? await buildSnapshotAnthropicFileBlocks(input.snapshotId)
+      : [];
   const messagesContent =
     input.contentBlocks && input.contentBlocks.length > 0
-      ? [{ type: "text", text: input.prompt }, ...input.contentBlocks]
-      : input.prompt;
+      ? [{ type: "text", text: input.prompt }, ...snapshotFileBlocks, ...input.contentBlocks]
+      : input.includeSnapshotFiles && snapshotFileBlocks.length > 0
+        ? [{ type: "text", text: input.prompt }, ...snapshotFileBlocks]
+        : input.prompt;
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -625,6 +723,7 @@ async function callClaude(input: {
       "content-type": "application/json",
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
+      "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
     },
     body: JSON.stringify({
       model,
@@ -642,6 +741,214 @@ async function callClaude(input: {
     throw new Error("Anthropic returned no text content");
   }
   return { text };
+}
+
+function resolveClaudeModel(configuredModel: string | undefined): string {
+  const model = configuredModel?.trim();
+  if (!model) {
+    return DEFAULT_CLAUDE_MODEL;
+  }
+
+  // Legacy aliases like "claude-3-5-sonnet-latest" can return 404 on some accounts.
+  if (model.endsWith("-latest")) {
+    return DEFAULT_CLAUDE_MODEL;
+  }
+
+  return model;
+}
+
+async function ensureAnthropicFileRegistered(input: {
+  target: Awaited<ReturnType<typeof getTargetDocument>>;
+  deterministic: DiscoverAndExtractResult;
+  localFilePath: string;
+}) {
+  const existing = await db
+    .select({
+      mappingId: snapshotAnthropicFiles.id,
+      fileRefId: snapshotAnthropicFiles.anthropicFileRefId,
+      anthropicFileId: anthropicFiles.anthropicFileId,
+    })
+    .from(snapshotAnthropicFiles)
+    .innerJoin(anthropicFiles, eq(anthropicFiles.id, snapshotAnthropicFiles.anthropicFileRefId))
+    .where(
+      and(
+        eq(snapshotAnthropicFiles.documentId, input.target.documentId),
+        eq(snapshotAnthropicFiles.status, "active"),
+        eq(anthropicFiles.status, "active"),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    return;
+  }
+
+  const textContent = await buildAnthropicTextContent({
+    target: input.target,
+    deterministic: input.deterministic,
+    localFilePath: input.localFilePath,
+  });
+  const anthropicFileId = await uploadTextFileToAnthropic({
+    filename: `${input.target.filename}.txt`,
+    text: textContent,
+  });
+
+  const [fileRef] = await db
+    .insert(anthropicFiles)
+    .values({
+      anthropicFileId,
+      originalFilename: input.target.filename,
+      fileType: input.target.fileExtension ?? inferFileExtension(input.target.filename) ?? "unknown",
+      status: "active",
+      uploadedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [anthropicFiles.anthropicFileId],
+      set: {
+        status: "active",
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ id: anthropicFiles.id });
+
+  await db
+    .insert(snapshotAnthropicFiles)
+    .values({
+      orgId: input.target.orgId,
+      snapshotId: input.target.snapshotId,
+      documentId: input.target.documentId,
+      anthropicFileRefId: fileRef.id,
+      status: "active",
+      deletedAt: null,
+      uploadedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [
+        snapshotAnthropicFiles.snapshotId,
+        snapshotAnthropicFiles.documentId,
+        snapshotAnthropicFiles.anthropicFileRefId,
+      ],
+      set: {
+        status: "active",
+        deletedAt: null,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+async function buildAnthropicTextContent(input: {
+  target: Awaited<ReturnType<typeof getTargetDocument>>;
+  deterministic: DiscoverAndExtractResult;
+  localFilePath: string;
+}): Promise<string> {
+  const ext = (input.target.fileExtension ?? inferFileExtension(input.target.filename) ?? "").toLowerCase();
+  if (ext === "csv") {
+    const csvText = await readFile(input.localFilePath, "utf8");
+    return csvText.slice(0, 1_000_000);
+  }
+
+  if (ext === "xlsx") {
+    const parts: string[] = [];
+    for (const sheet of input.deterministic.sheets.slice(0, 50)) {
+      const sheetName = asString((sheet as { sheetName?: unknown }).sheetName) ?? "unknown";
+      const headers = Array.isArray((sheet as { headersJson?: unknown }).headersJson)
+        ? ((sheet as { headersJson?: unknown[] }).headersJson as unknown[])
+        : [];
+      const sampleRows = Array.isArray((sheet as { sampleRowsJson?: unknown }).sampleRowsJson)
+        ? ((sheet as { sampleRowsJson?: unknown[] }).sampleRowsJson as unknown[])
+        : [];
+      parts.push(`## Sheet: ${sheetName}`);
+      parts.push(headers.map((header) => String(header ?? "")).join(","));
+      for (const row of sampleRows.slice(0, 200)) {
+        if (row && typeof row === "object") {
+          const values = headers.map((header) =>
+            String((row as Record<string, unknown>)[String(header)] ?? ""),
+          );
+          parts.push(values.join(","));
+        }
+      }
+      parts.push("");
+    }
+    return parts.join("\n").slice(0, 1_000_000);
+  }
+
+  if (input.target.mimeType.startsWith("text/")) {
+    const text = await readFile(input.localFilePath, "utf8");
+    return text.slice(0, 1_000_000);
+  }
+
+  return JSON.stringify(
+    {
+      fileName: input.target.filename,
+      mimeType: input.target.mimeType,
+      deterministic: input.deterministic,
+    },
+    null,
+    2,
+  ).slice(0, 1_000_000);
+}
+
+async function uploadTextFileToAnthropic(input: {
+  filename: string;
+  text: string;
+}): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY is not configured");
+  }
+
+  const form = new FormData();
+  form.append("file", new Blob([input.text], { type: "text/plain" }), input.filename);
+
+  const response = await fetch("https://api.anthropic.com/v1/files", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
+    },
+    body: form,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Anthropic file upload error ${response.status}: ${await response.text()}`);
+  }
+
+  const data = (await response.json()) as { id?: string };
+  if (!data.id) {
+    throw new Error("Anthropic file upload returned no file id");
+  }
+
+  return data.id;
+}
+
+async function buildSnapshotAnthropicFileBlocks(
+  snapshotId: string,
+): Promise<Array<Record<string, unknown>>> {
+  const rows = await db
+    .select({
+      anthropicFileId: anthropicFiles.anthropicFileId,
+    })
+    .from(snapshotAnthropicFiles)
+    .innerJoin(anthropicFiles, eq(anthropicFiles.id, snapshotAnthropicFiles.anthropicFileRefId))
+    .where(
+      and(
+        eq(snapshotAnthropicFiles.snapshotId, snapshotId),
+        eq(snapshotAnthropicFiles.status, "active"),
+        eq(anthropicFiles.status, "active"),
+      ),
+    );
+
+  return rows.map((row) => ({
+    type: "document",
+    source: {
+      type: "file",
+      file_id: row.anthropicFileId,
+    },
+  }));
 }
 
 async function downloadFileToTemp(input: {
@@ -686,18 +993,36 @@ async function downloadFileToTemp(input: {
 async function buildClaudeContractContent(input: {
   localFilePath: string;
   mimeType: string;
-}): Promise<Array<Record<string, unknown>>> {
-  const bytes = await readFile(input.localFilePath);
-  return [
-    {
-      type: "document",
-      source: {
-        type: "base64",
-        media_type: input.mimeType || "application/octet-stream",
-        data: Buffer.from(bytes).toString("base64"),
-      },
-    },
-  ];
+}): Promise<{ contentBlocks: Array<Record<string, unknown>>; supplementalText: string | null }> {
+  if (input.mimeType === "application/pdf") {
+    const bytes = await readFile(input.localFilePath);
+    return {
+      contentBlocks: [
+        {
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: "application/pdf",
+            data: Buffer.from(bytes).toString("base64"),
+          },
+        },
+      ],
+      supplementalText: null,
+    };
+  }
+
+  if (input.mimeType.startsWith("text/")) {
+    const text = await readFile(input.localFilePath, "utf8");
+    return {
+      contentBlocks: [],
+      supplementalText: text.slice(0, 80_000),
+    };
+  }
+
+  return {
+    contentBlocks: [],
+    supplementalText: null,
+  };
 }
 
 function assertDocumentReady(fileStatus: string, deletedAt: Date | null) {
@@ -785,6 +1110,24 @@ function parseJsonObject(text: string): unknown {
     }
     return JSON.parse(trimmed.slice(start, end + 1));
   }
+}
+
+function normalizeTrianglesFromClaude(raw: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .map((triangle) => {
+      if (!triangle || typeof triangle !== "object") {
+        return null;
+      }
+      const sheetIndex = asInteger((triangle as { sheetIndex?: unknown }).sheetIndex);
+      if (sheetIndex === null) {
+        return null;
+      }
+      return triangle as Record<string, unknown>;
+    })
+    .filter((triangle): triangle is Record<string, unknown> => triangle !== null);
 }
 
 function inferFileExtension(fileName: string): string | null {

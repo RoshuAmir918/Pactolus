@@ -42,6 +42,7 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
   const [listLoading, setListLoading] = useState(true);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [ingestionStatusText, setIngestionStatusText] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +65,7 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
 
   const handleUploadClick = () => {
     setUploadError(null);
+    setIngestionStatusText(null);
     setDeleteError(null);
     fileInputRef.current?.click();
   };
@@ -101,6 +103,7 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
 
     setUploadLoading(true);
     setUploadError(null);
+    setIngestionStatusText(null);
     try {
       const { uploadUrl, bucket, objectKey } = await trpc.storage.getUploadUrl.mutate({
         snapshotId: snapshot.id,
@@ -118,7 +121,7 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
         throw new Error(`Upload failed: ${putRes.status}`);
       }
 
-      await trpc.storage.completeUpload.mutate({
+      const completed = await trpc.storage.completeUpload.mutate({
         snapshotId: snapshot.id,
         bucket,
         objectKey,
@@ -127,9 +130,22 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
         sizeBytes,
       });
 
+      setIngestionStatusText("Starting ingestion...");
+      await trpc.ingestion.startDocumentIngestion.mutate({
+        snapshotId: snapshot.id,
+        documentId: completed.documentId,
+      });
+      await waitForIngestion({
+        snapshotId: snapshot.id,
+        documentId: completed.documentId,
+        onProgress: (text) => setIngestionStatusText(text),
+      });
+
       await loadRawDataFiles();
+      setIngestionStatusText("Ingestion complete.");
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Upload failed.");
+      setIngestionStatusText(null);
     } finally {
       setUploadLoading(false);
     }
@@ -183,6 +199,11 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
                         <p className="px-5 py-1 text-xs text-destructive">
                           {uploadError ?? deleteError}
                         </p>
+                      </SidebarMenuSubItem>
+                    )}
+                    {isRawData && ingestionStatusText && (
+                      <SidebarMenuSubItem>
+                        <p className="px-5 py-1 text-xs text-muted-foreground">{ingestionStatusText}</p>
                       </SidebarMenuSubItem>
                     )}
                     {isRawData && listLoading && files.length === 0 ? (
@@ -243,4 +264,37 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
       </SidebarGroup>
     </div>
   );
+}
+
+async function waitForIngestion(input: {
+  snapshotId: string;
+  documentId: string;
+  onProgress: (text: string) => void;
+}): Promise<void> {
+  const maxAttempts = 40;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const status = await trpc.ingestion.getDocumentIngestionStatus.query({
+      snapshotId: input.snapshotId,
+      documentId: input.documentId,
+    });
+
+    if (status.profileStatus === "failed" || status.aiStatus === "failed") {
+      throw new Error(status.errorText ?? "Ingestion failed.");
+    }
+
+    if (status.profileStatus === "completed" && status.aiStatus === "completed") {
+      return;
+    }
+
+    input.onProgress(
+      `Ingesting... (${status.sheetCount} sheets, ${status.triangleCount} triangles, ${status.insightCount} insights)`,
+    );
+    await sleep(1500);
+  }
+
+  throw new Error("Timed out waiting for ingestion to complete.");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
