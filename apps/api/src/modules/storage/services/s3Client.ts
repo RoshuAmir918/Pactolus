@@ -5,9 +5,10 @@ if (!region) {
   throw new Error("S3_REGION missing");
 }
 
-export const s3Bucket = process.env.S3_BUCKET;
-if (!s3Bucket) {
+const bucket = process.env.S3_BUCKET;
+if (!bucket) {
   throw new Error("S3_BUCKET missing");
 }
+export const s3Bucket: string = bucket;
 
 export const s3Client = new S3Client({ region });

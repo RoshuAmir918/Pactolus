@@ -2,8 +2,18 @@ import { authenticatedProcedure, router } from "@api/trpc/base";
 import {
   createSnapshotInputSchema,
   createSnapshotOutputSchema,
+  getDocumentIngestionStatusInputSchema,
+  getDocumentIngestionStatusOutputSchema,
+  startDocumentIngestionInputSchema,
+  startDocumentIngestionOutputSchema,
 } from "./schemas";
 import { createSnapshot, type CreateSnapshotResult } from "./services/createSnapshot";
+import {
+  getDocumentIngestionStatus,
+  startDocumentIngestion,
+  type DocumentIngestionStatusResult,
+} from "./services/ingestDocument";
+import { assertSnapshotAccess } from "@api/modules/guards/services/assertSnapshotAccess";
 
 export const ingestionRouter = router({
   createSnapshot: authenticatedProcedure
@@ -19,6 +29,38 @@ export const ingestionRouter = router({
           accountingPeriod: input.accountingPeriod,
         }),
     ),
+
+  startDocumentIngestion: authenticatedProcedure
+    .input(startDocumentIngestionInputSchema)
+    .output(startDocumentIngestionOutputSchema)
+    .mutation(async ({ ctx, input }): Promise<DocumentIngestionStatusResult> => {
+      await assertSnapshotAccess({
+        snapshotId: input.snapshotId,
+        orgId: ctx.orgId,
+      });
+
+      return startDocumentIngestion({
+        orgId: ctx.orgId,
+        snapshotId: input.snapshotId,
+        documentId: input.documentId,
+      });
+    }),
+
+  getDocumentIngestionStatus: authenticatedProcedure
+    .input(getDocumentIngestionStatusInputSchema)
+    .output(getDocumentIngestionStatusOutputSchema)
+    .query(async ({ ctx, input }): Promise<DocumentIngestionStatusResult> => {
+      await assertSnapshotAccess({
+        snapshotId: input.snapshotId,
+        orgId: ctx.orgId,
+      });
+
+      return getDocumentIngestionStatus({
+        orgId: ctx.orgId,
+        snapshotId: input.snapshotId,
+        documentId: input.documentId,
+      });
+    }),
 
 });
 
