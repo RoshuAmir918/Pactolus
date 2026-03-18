@@ -1,5 +1,5 @@
 {
-  "id": "d63c7029-ee0b-410e-8fc9-8c44282b9261",
+  "id": "fdebe231-4c8d-4f6e-857b-ebaf5c5eda5b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -3004,6 +3004,12 @@
         },
         "detected_tables_json": {
           "name": "detected_tables_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sheet_about_json": {
+          "name": "sheet_about_json",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

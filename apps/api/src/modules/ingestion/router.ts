@@ -11,8 +11,8 @@ import { createSnapshot, type CreateSnapshotResult } from "./services/createSnap
 import {
   getDocumentIngestionStatus,
   startDocumentIngestion,
-  type DocumentIngestionStatusResult,
-} from "./services/ingestDocument";
+} from "./services/document-ingestion/orchestrator";
+import type { DocumentIngestionStatusResult } from "./services/document-ingestion/shared/types";
 import { assertSnapshotAccess } from "@api/modules/guards/services/assertSnapshotAccess";
 
 export const ingestionRouter = router({
@@ -29,6 +29,7 @@ export const ingestionRouter = router({
           accountingPeriod: input.accountingPeriod,
         }),
     ),
+
 
   startDocumentIngestion: authenticatedProcedure
     .input(startDocumentIngestionInputSchema)

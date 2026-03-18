@@ -1,7 +1,7 @@
+import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
 
 export type DiscoverAndExtractInput = {
   filePath: string;
@@ -25,9 +25,7 @@ export type DiscoverAndExtractResult = {
   };
 };
 
-export async function discoverAndExtractActivity(
-  input: DiscoverAndExtractInput,
-): Promise<DiscoverAndExtractResult> {
+export async function discoverAndExtract(input: DiscoverAndExtractInput): Promise<DiscoverAndExtractResult> {
   const tempDir = await mkdtemp(join(tmpdir(), "pactolus-det-"));
   const inputPath = join(tempDir, "input.json");
   const scriptPath = new URL("./python/deterministic_ingest.py", import.meta.url).pathname;
