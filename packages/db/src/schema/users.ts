@@ -1,4 +1,5 @@
 import {
+    boolean,
     index,
     pgEnum,
     pgTable,
@@ -43,6 +44,7 @@ export const users = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    isSuperUser: boolean("is_super_user").notNull().default(false),
   },
   (table) => [
     uniqueIndex("users_email_unique").on(table.email),

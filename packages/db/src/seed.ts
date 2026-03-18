@@ -63,7 +63,7 @@ async function getOrCreateUser(): Promise<SelectUser> {
     if (existingUser) {
         await db
             .update(users)
-            .set({ password: passwordHash })
+            .set({ password: passwordHash, isSuperUser: true })
             .where(eq(users.id, existingUser.id));
         return existingUser;
     }
@@ -77,6 +77,7 @@ async function getOrCreateUser(): Promise<SelectUser> {
             fullName: "Demo User",
             password: passwordHash,
             status: "active",
+            isSuperUser: true,
         })
         .returning();
 

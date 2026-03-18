@@ -2,6 +2,7 @@ export * from "./organizations";
 export * from "./clients";
 export * from "./users";
 export * from "./memberships";
+export * from "./organizationInvitations";
 export * from "./snapshots";
 export * from "./operations/runs";
 export * from "./operations/runBranches";
