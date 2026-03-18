@@ -3173,6 +3173,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "sheet_about_json": {
+          "name": "sheet_about_json",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "ai_classification": {
           "name": "ai_classification",
           "type": "document_sheet_ai_classification",

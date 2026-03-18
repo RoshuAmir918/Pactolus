@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { ingestionGuardrails } from "../apps/api/src/modules/ingestion/services/ingestDocument";
+import { ingestionGuardrails } from "../apps/api/src/modules/ingestion/services/document-ingestion/orchestrator";
 
 function run() {
   assert.equal(ingestionGuardrails.shouldAllowClaudeDocument(1024), true);

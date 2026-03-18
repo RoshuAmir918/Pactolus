@@ -53,6 +53,7 @@ export const documentSheets = pgTable(
     sampleRowsJson: jsonb("sample_rows_json"),
     rowCountEstimate: integer("row_count_estimate"),
     detectedTablesJson: jsonb("detected_tables_json"),
+    sheetAboutJson: jsonb("sheet_about_json"),
     aiClassification: documentSheetAiClassificationEnum("ai_classification")
       .notNull()
       .default("unknown"),
