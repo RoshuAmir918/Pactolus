@@ -29,7 +29,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
-import { trpc } from "@/lib/trpc";
+import { trpc } from "@/lib/trpc-client";
 import {
   demoOrgsAtom,
   type DemoOrg,

@@ -2,7 +2,7 @@
 
 import { atom } from "jotai";
 import { getMe } from "@/lib/auth-client";
-import { trpc } from "@/lib/trpc";
+import { trpc } from "@/lib/trpc-client";
 import { authUserAtom } from "@/stores/auth";
 
 export type WorkspaceFile = {
