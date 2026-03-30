@@ -143,7 +143,6 @@ export type AuthTRPC = {
     };
   };
 };
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const client = createTRPCClient<any>({
   links: [
@@ -157,3 +156,4 @@ const client = createTRPCClient<any>({
 });
 
 export const trpc = client as unknown as AuthTRPC;
+

@@ -1,4 +1,5 @@
-import { trpc, type AuthUser } from "@/lib/trpc";
+import { trpc } from "@/lib/trpc-client";
+import type { AuthUser } from "@/lib/trpc";
 
 export type { AuthUser };
 

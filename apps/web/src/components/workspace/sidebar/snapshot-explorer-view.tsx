@@ -20,7 +20,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { trpc } from "@/lib/trpc";
+import { trpc } from "@/lib/trpc-client";
 import type { WorkspaceFile, WorkspaceSnapshot } from "@/stores/workspace";
 
 const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";

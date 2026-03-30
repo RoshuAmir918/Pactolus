@@ -3,13 +3,14 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useAtomValue, useSetAtom } from "jotai";
-import { authUserAtom } from "@/stores/auth";
+import { authUserAtom, isLoggedInAdminAtom } from "@/stores/auth";
 import { getMe } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { LogoutButton } from "@/components/auth/logout-button";
 
 export default function Home() {
   const user = useAtomValue(authUserAtom);
+  const isLoggedInAdmin = useAtomValue(isLoggedInAdminAtom);
   const setUser = useSetAtom(authUserAtom);
 
   useEffect(() => {
@@ -22,10 +23,15 @@ export default function Home() {
       {user ? (
         <div className="flex flex-col items-center gap-4">
           <p className="text-muted-foreground">You are logged in.</p>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <Button asChild variant="default">
               <Link href="/workspace">Workspace</Link>
             </Button>
+            {isLoggedInAdmin ? (
+              <Button asChild variant="secondary">
+                <Link href="/admin">Admin</Link>
+              </Button>
+            ) : null}
             <LogoutButton />
           </div>
         </div>
