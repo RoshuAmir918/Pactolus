@@ -14,10 +14,22 @@ const app = express();
 const PgSessionStore = connectPgSimple(session);
 const sessionSecret =
   process.env.SESSION_SECRET ?? "dev-secret-change-in-production";
+const allowedOrigins = new Set([
+  process.env.WEB_ORIGIN ?? "http://localhost:3000",
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "https://localhost:3001",
+]);
 
 app.use(
   cors({
-    origin: process.env.WEB_ORIGIN ?? "http://localhost:3000",
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin ${origin}`));
+    },
     credentials: true,
   }),
 );

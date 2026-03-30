@@ -1,23 +1,41 @@
 import { authenticatedProcedure, router } from "@api/trpc/base";
 import {
+  archiveBranchInputSchema,
+  archiveBranchOutputSchema,
   appendStepInputSchema,
   appendStepOutputSchema,
+  completeBranchInputSchema,
+  completeBranchOutputSchema,
   createBranchInputSchema,
   createBranchOutputSchema,
   createRunInputSchema,
   createRunOutputSchema,
   getBranchEffectiveHistoryInputSchema,
   getBranchEffectiveHistoryOutputSchema,
+  getRunsBySnapshotInputSchema,
+  getRunsBySnapshotOutputSchema,
   getRunBranchesInputSchema,
   getRunBranchesOutputSchema,
 } from "./schemas";
+import {
+  archiveBranch,
+  type ArchiveBranchResult,
+} from "./services/archiveBranch";
 import { appendStep, type AppendStepResult } from "./services/appendStep";
+import {
+  completeBranch,
+  type CompleteBranchResult,
+} from "./services/completeBranch";
 import { createBranch, type CreateBranchResult } from "./services/createBranch";
 import { createRun, type CreateRunResult } from "./services/createRun";
 import {
   getBranchEffectiveHistory,
   type GetBranchEffectiveHistoryResult,
 } from "./services/getBranchEffectiveHistory";
+import {
+  getRunsBySnapshot,
+  type GetRunsBySnapshotResult,
+} from "./services/getRunsBySnapshot";
 import { getRunBranches, type GetRunBranchesResult } from "./services/getRunBranches";
 
 export const operationsRouter = router({
@@ -47,6 +65,17 @@ export const operationsRouter = router({
       }),
     ),
 
+  archiveBranch: authenticatedProcedure
+    .input(archiveBranchInputSchema)
+    .output(archiveBranchOutputSchema)
+    .mutation(async ({ ctx, input }): Promise<ArchiveBranchResult> =>
+      archiveBranch({
+        orgId: ctx.orgId,
+        runId: input.runId,
+        branchId: input.branchId,
+      }),
+    ),
+
   appendStep: authenticatedProcedure
     .input(appendStepInputSchema)
     .output(appendStepOutputSchema)
@@ -65,6 +94,20 @@ export const operationsRouter = router({
       }),
     ),
 
+  completeBranch: authenticatedProcedure
+    .input(completeBranchInputSchema)
+    .output(completeBranchOutputSchema)
+    .mutation(async ({ ctx, input }): Promise<CompleteBranchResult> =>
+      completeBranch({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        runId: input.runId,
+        branchId: input.branchId,
+        idempotencyKey: input.idempotencyKey,
+        generateAiSummary: input.generateAiSummary,
+      }),
+    ),
+
   getRunBranches: authenticatedProcedure
     .input(getRunBranchesInputSchema)
     .output(getRunBranchesOutputSchema)
@@ -72,6 +115,17 @@ export const operationsRouter = router({
       getRunBranches({
         orgId: ctx.orgId,
         runId: input.runId,
+      }),
+    ),
+
+  getRunsBySnapshot: authenticatedProcedure
+    .input(getRunsBySnapshotInputSchema)
+    .output(getRunsBySnapshotOutputSchema)
+    .query(async ({ ctx, input }): Promise<GetRunsBySnapshotResult> =>
+      getRunsBySnapshot({
+        orgId: ctx.orgId,
+        snapshotId: input.snapshotId,
+        limit: input.limit,
       }),
     ),
 

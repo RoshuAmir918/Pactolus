@@ -3,3 +3,4 @@ node_modules/
 
 packages/db/migrations/**/*.sql
 packages/db/migrations/meta/**/*.json
+!packages/db/migrations/.gitkeep

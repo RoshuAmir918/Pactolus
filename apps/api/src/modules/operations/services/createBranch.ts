@@ -34,14 +34,6 @@ export async function createBranch(input: CreateBranchInput): Promise<CreateBran
     runId: input.runId,
   });
 
-  // V1 guardrail: forks are only allowed from the root main branch.
-  if (parentBranch.name !== "main" || parentBranch.parentBranchId !== null) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "V1 only supports creating branches from the main branch",
-    });
-  }
-
   if (input.forkedFromStepId) {
     const [forkStep] = await db
       .select({ id: runOperations.id })

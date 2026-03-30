@@ -34,6 +34,17 @@ export const createBranchOutputSchema = z.object({
   status: runBranchStatusSchema,
 });
 
+export const archiveBranchInputSchema = z.object({
+  runId: z.uuid(),
+  branchId: z.uuid(),
+});
+
+export const archiveBranchOutputSchema = z.object({
+  branchId: z.uuid(),
+  runId: z.uuid(),
+  status: runBranchStatusSchema,
+});
+
 export const appendStepInputSchema = z.object({
   runId: z.uuid(),
   branchId: z.uuid().optional(),
@@ -75,6 +86,23 @@ export const getRunBranchesOutputSchema = z.object({
   ),
 });
 
+export const getRunsBySnapshotInputSchema = z.object({
+  snapshotId: z.uuid(),
+  limit: z.number().int().positive().max(100).optional(),
+});
+
+export const getRunsBySnapshotOutputSchema = z.object({
+  runs: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      status: runStatusSchema,
+      createdAt: z.date(),
+      updatedAt: z.date(),
+    }),
+  ),
+});
+
 export const getBranchEffectiveHistoryInputSchema = z.object({
   runId: z.uuid(),
   branchId: z.uuid(),
@@ -99,4 +127,56 @@ export const getBranchEffectiveHistoryOutputSchema = z.object({
       createdAt: z.date(),
     }),
   ),
+});
+
+export const completeBranchInputSchema = z.object({
+  runId: z.uuid(),
+  branchId: z.uuid(),
+  idempotencyKey: z.string().min(1).optional(),
+  generateAiSummary: z.boolean().optional(),
+});
+
+const assumptionValueSchema = z.object({
+  valueJson: z.unknown(),
+  confidence: z.number().min(0).max(1).nullable(),
+  rationale: z.string().nullable(),
+  sourceStepId: z.uuid(),
+});
+
+export const completeBranchOutputSchema = z.object({
+  completionStepId: z.uuid(),
+  runId: z.uuid(),
+  branchId: z.uuid(),
+  branchStatus: runBranchStatusSchema,
+  assumptionDiff: z.object({
+    baselineCount: z.number().int().nonnegative(),
+    finalCount: z.number().int().nonnegative(),
+    added: z.array(
+      z.object({
+        assumptionKey: z.string(),
+        after: assumptionValueSchema,
+      }),
+    ),
+    removed: z.array(
+      z.object({
+        assumptionKey: z.string(),
+        before: assumptionValueSchema,
+      }),
+    ),
+    modified: z.array(
+      z.object({
+        assumptionKey: z.string(),
+        before: assumptionValueSchema,
+        after: assumptionValueSchema,
+        changedFields: z.array(z.enum(["value", "confidence", "rationale"])),
+      }),
+    ),
+  }),
+  aiSummary: z
+    .object({
+      summary: z.string(),
+      notableChanges: z.array(z.string()),
+      confidence: z.number().min(0).max(1).nullable(),
+    })
+    .nullable(),
 });

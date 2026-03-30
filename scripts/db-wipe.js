@@ -17,6 +17,13 @@ const rootDir = path.resolve(__dirname, "..");
 const migrationsDir = path.join(rootDir, "packages", "db", "migrations");
 const metaDir = path.join(migrationsDir, "meta");
 
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+    console.log(`Created ${dirPath}`);
+  }
+}
+
 function safeUnlink(filePath) {
   try {
     if (fs.existsSync(filePath)) {
@@ -40,6 +47,11 @@ async function getAllOrganizationIds() {
   try {
     const result = await pool.query('select id from "organizations"');
     return result.rows.map((row) => row.id);
+  } catch {
+    console.warn(
+      "Could not read organizations (possibly not migrated yet). Skipping S3 cleanup.",
+    );
+    return [];
   } finally {
     await pool.end();
   }
@@ -148,6 +160,10 @@ async function deleteOrgPrefix(s3Client, bucket, orgId) {
 }
 
 async function main() {
+  // Ensure migrations structure exists even if files are gitignored/cleaned.
+  ensureDir(migrationsDir);
+  ensureDir(metaDir);
+
   console.log("Collecting active Anthropic file IDs before DB reset...");
   const anthropicFileIds = await getActiveAnthropicFileIds();
   console.log(`Found ${anthropicFileIds.length} active Anthropic files`);
@@ -183,9 +199,9 @@ async function main() {
   }
 
   console.log("Removing existing migration SQL files...");
-  const migrationFiles = fs
-    .readdirSync(migrationsDir)
-    .filter((name) => name.endsWith(".sql"));
+  const migrationFiles = fs.readdirSync(migrationsDir).filter((name) => {
+    return name.endsWith(".sql");
+  });
   for (const file of migrationFiles) {
     safeUnlink(path.join(migrationsDir, file));
   }
@@ -193,11 +209,9 @@ async function main() {
   console.log(
     "Removing existing migration meta snapshot files (keeping _journal.json)...",
   );
-  const metaSnapshotFiles = fs
-    .readdirSync(metaDir)
-    .filter(
-      (name) => name !== "_journal.json" && name.endsWith("_snapshot.json"),
-    );
+  const metaSnapshotFiles = fs.readdirSync(metaDir).filter((name) => {
+    return name !== "_journal.json" && name.endsWith("_snapshot.json");
+  });
   for (const file of metaSnapshotFiles) {
     safeUnlink(path.join(metaDir, file));
   }

@@ -13,7 +13,7 @@
     "db:migrate": "drizzle-kit migrate --config=packages/db/src/drizzle.config.ts",
     "db:seed": "tsx packages/db/src/seed.ts",
     "db:wipe": "node scripts/db-wipe.js",
-    "api:dev": "tsx apps/api/src/index.ts",
+    "api:dev": "tsx watch apps/api/src/index.ts",
     "web:dev": "npm run dev --prefix apps/web",
     "worker:dev": "tsx apps/worker/src/index.ts"
   },
