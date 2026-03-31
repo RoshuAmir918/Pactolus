@@ -17,6 +17,7 @@ export function WorkspacePage(props: {
   committedOperations: StepRecord[];
   sourceDocuments: SourceDocument[];
   detectedRegions: MonitoredRegion[];
+  isDetectingRegions: boolean;
   onDetectRegions: () => Promise<void>;
   onSelectRegion: (sheetName: string | undefined, address: string) => Promise<void>;
   status: { kind: "ok" | "error"; message: string } | null;
@@ -25,7 +26,7 @@ export function WorkspacePage(props: {
   onSelectBranch: (branchId: string) => void;
   onDeleteBranch: (branchId: string) => Promise<void> | void;
   onNewScenario: (name: string) => Promise<void>;
-  onSaveScenario: () => Promise<void>;
+  onSaveScenario: (narrative: string) => Promise<void>;
   onOpenWorkbook: (documentId: string) => void;
   onOpenDocument: (documentId: string, fileExtension: string | null) => void;
   onUploadDocument: (file: File) => Promise<void>;
@@ -168,6 +169,7 @@ export function WorkspacePage(props: {
             committedOperations={props.committedOperations}
             sourceDocuments={props.sourceDocuments}
             detectedRegions={props.detectedRegions}
+            isDetectingRegions={props.isDetectingRegions}
             onDetectRegions={props.onDetectRegions}
             onSelectRegion={props.onSelectRegion}
             onSelectNode={(_id, branchId) => {

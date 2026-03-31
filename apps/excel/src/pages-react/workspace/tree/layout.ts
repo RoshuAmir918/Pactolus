@@ -46,6 +46,37 @@ export function pathTo(
   return null;
 }
 
+export function cloneTree(node: TreeNode): TreeNode {
+  return { ...node, children: node.children.map(cloneTree) };
+}
+
+export function withSkeletons(root: TreeNode): TreeNode {
+  const cloned = cloneTree(root);
+  const flat = allNodes(cloned);
+
+  // + save here: child of "active" (linear append below it)
+  const active = flat.find((n) => n.id === "active");
+  if (active) {
+    active.children = [
+      ...active.children,
+      { id: "__skeleton_append", label: "+ save here", meta: "", tone: "skeleton" as const, parent: "active", children: [], lx: 0, ly: 0 },
+    ];
+  }
+
+  // + new scenario: sibling of "active" (forks from active's parent)
+  const parent = active?.parent ? flat.find((n) => n.id === active.parent) : null;
+  const forkHost = parent ?? active;
+  if (forkHost) {
+    forkHost.children = [
+      ...forkHost.children,
+      { id: "__skeleton_branch", label: "+ new scenario", meta: "", tone: "skeleton" as const, parent: forkHost.id, children: [], lx: 0, ly: 0 },
+    ];
+  }
+
+  assignPos(cloned, 0, 0);
+  return cloned;
+}
+
 export function stepLabel(step: StepRecord): string {
   if (step.stepType === "excel_tool") {
     const p = step.parametersJson as { toolName?: string } | null;
@@ -99,18 +130,20 @@ export function buildTreeFromSteps(
     "active",
     tail.id,
   );
-  active.children = otherBranches.map((b) =>
+
+  // Other branches are siblings of active (both children of the last tail node)
+  const savedNodes = otherBranches.map((b) =>
     make(
       b.id,
       b.name,
       lastDocByBranch.has(b.id) ? "saved" : "unsaved",
       "saved",
-      "active",
+      tail.id,
       b.id,
       lastDocByBranch.get(b.id),
     ),
   );
-  tail.children = [active];
+  tail.children = [active, ...savedNodes];
 
   assignPos(ingest, 0, 0);
   return ingest;

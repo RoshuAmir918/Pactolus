@@ -1,5 +1,5 @@
 export type Tab = "chat" | "runs";
-export type NodeTone = "done" | "active" | "saved";
+export type NodeTone = "done" | "active" | "saved" | "skeleton";
 
 export interface TreeNode {
   id: string;

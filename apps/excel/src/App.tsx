@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { AuthPage } from "@/pages-react/AuthPage";
 import { RunSetupPage } from "@/pages-react/RunSetupPage";
 import { WorkspacePage } from "@/pages-react/workspace";
@@ -37,7 +37,7 @@ import {
 } from "@/features/session/atoms";
 import { getWorkbookBlob, captureAllSheetSlices, selectRange, WORKBOOK_CONTENT_TYPE } from "@/lib/office/worksheet";
 import { getCachedDownloadUrl, setCachedDownloadUrl } from "@/lib/api/downloadCache";
-import type { RunSession, StepRecord } from "@/features/types";
+import type { RunSession } from "@/features/types";
 
 export default function App() {
   // ── persisted atoms ──────────────────────────────────────────────────────────
@@ -73,6 +73,7 @@ export default function App() {
   // ── local ui-only state (no persistence needed) ───────────────────────────────
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isDetectingRegions, setIsDetectingRegions] = useState(false);
 
   const normalizedApiUrl = normalizeApiUrl(apiUrl);
 
@@ -193,11 +194,19 @@ export default function App() {
       setAuthenticated(true);
       setAuthEmail(email.trim());
       await loadClientAndSnapshotOptions();
-      // restore persisted snapshot/run/branch selection
+      // restore persisted snapshot/run/branch selection — silently clear stale IDs (e.g. after DB wipe)
       if (snapshotId) {
-        await fetchRuns(snapshotId);
-        if (selectedRunId) {
-          await fetchBranches(selectedRunId);
+        try {
+          await fetchRuns(snapshotId);
+          if (selectedRunId) {
+            await fetchBranches(selectedRunId);
+          }
+        } catch {
+          setSelectedRunId("");
+          setSelectedBranchId("");
+          setAvailableRuns([]);
+          setAvailableBranches([]);
+          mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
         }
       }
       setCurrentPage("run");
@@ -301,19 +310,6 @@ export default function App() {
       await fetchBranches(runId);
     } catch (error) {
       setError(`Load branches failed: ${formatError(error)}`);
-    }
-  }
-
-  function onSelectBranch(branchId: string) {
-    setSelectedBranchId(branchId);
-    mergeRunSession({
-      runId: selectedRunId || null,
-      branchId: branchId || null,
-      lastStepId: null,
-      startedAtIso: branchId ? new Date().toISOString() : null,
-    });
-    if (branchId) {
-      setOk("Run and branch selected for this Excel session.");
     }
   }
 
@@ -501,7 +497,7 @@ export default function App() {
     }
   }
 
-  async function onSaveScenario() {
+  async function onSaveScenario(narrative: string) {
     if (!runSession.runId || !runSession.branchId) return;
     const client = getApiClient(normalizedApiUrl);
     const savedAt = new Date().toISOString();
@@ -544,7 +540,7 @@ export default function App() {
         stepType: "scenario_snapshot",
         documentId,
         idempotencyKey: `scenario-save:${runSession.branchId}:${Date.now()}`,
-        parametersJson: { savedAt },
+        parametersJson: { savedAt, narrative: narrative.trim() || null },
       });
       if (stepId) mergeRunSession({ lastStepId: stepId });
     } catch {
@@ -643,6 +639,7 @@ export default function App() {
 
   async function runWorkbookDetection() {
     if (!snapshotId.trim()) return;
+    setIsDetectingRegions(true);
     try {
       const sheets = await captureAllSheetSlices();
       if (sheets.length === 0) return;
@@ -678,6 +675,8 @@ export default function App() {
       }
     } catch {
       // silent — best-effort
+    } finally {
+      setIsDetectingRegions(false);
     }
   }
 
@@ -838,6 +837,7 @@ export default function App() {
       onSaveScenario={onSaveScenario}
       sourceDocuments={sourceDocuments}
       detectedRegions={detectedRegions}
+      isDetectingRegions={isDetectingRegions}
       onDetectRegions={runWorkbookDetection}
       onSelectRegion={selectRange}
       onOpenWorkbook={onOpenWorkbook}

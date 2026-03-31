@@ -136,8 +136,8 @@ export async function extractScenarioAssumptions(input: {
 
     const reportBlock = toolUseBlocks.find((b) => b.name === "report_assumptions");
     if (reportBlock) {
-      const toolInput = reportBlock.input as { assumptions: AssumptionItem[] };
-      const assumptions: AssumptionItem[] = toolInput.assumptions
+      const toolInput = reportBlock.input as { assumptions?: AssumptionItem[] };
+      const assumptions: AssumptionItem[] = (toolInput.assumptions ?? [])
         .filter((a) => a.confidence >= 0.6)
         .map((a) => ({
           key: a.key,
@@ -269,19 +269,23 @@ function buildSystemPrompt(
   for (const sheet of workbookSheets) {
     parts.push(`\n**Sheet: "${sheet.sheetName}"** (${sheet.rowCount} rows × ${sheet.columnCount} cols)`);
     if (sheet.headers.length > 0) {
-      parts.push(`  Headers: ${sheet.headers.slice(0, 20).join(" | ")}`);
+      parts.push(`  Headers: ${sheet.headers.slice(0, 12).join(" | ")}`);
     }
     if (sheet.sampleRows.length > 0) {
-      parts.push("  Sample values (first 8 rows):");
-      for (const row of sheet.sampleRows.slice(0, 8)) {
-        parts.push(`    ${row.slice(0, 15).join("\t")}`);
+      parts.push("  Sample (first 5 rows):");
+      for (const row of sheet.sampleRows.slice(0, 5)) {
+        parts.push(`    ${row.slice(0, 10).join("\t")}`);
       }
     }
     if (sheet.regions && sheet.regions.length > 0) {
-      parts.push("  Pre-classified regions (address | type | font-color):");
-      for (const r of sheet.regions) {
-        const colorNote = r.fontColor ? ` | font:${r.fontColor}` : "";
-        parts.push(`    ${r.address} | ${r.type}${colorNote}`);
+      // Only N-type regions (hardcoded numbers) are relevant for assumption extraction; cap at 40
+      const nRegions = sheet.regions.filter((r) => r.type === "N").slice(0, 40);
+      if (nRegions.length > 0) {
+        parts.push("  N-regions (address | font):");
+        for (const r of nRegions) {
+          const colorNote = r.fontColor ? ` | ${r.fontColor}` : "";
+          parts.push(`    ${r.address}${colorNote}`);
+        }
       }
     }
   }

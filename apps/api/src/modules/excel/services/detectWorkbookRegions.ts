@@ -304,19 +304,23 @@ function buildSystemPrompt(
   for (const sheet of workbookSheets) {
     parts.push(`\n**Sheet: "${sheet.sheetName}"** (${sheet.rowCount} rows × ${sheet.columnCount} cols)`);
     if (sheet.headers.length > 0) {
-      parts.push(`  Row 1 (headers): ${sheet.headers.slice(0, 20).join(" | ")}`);
+      parts.push(`  Headers: ${sheet.headers.slice(0, 12).join(" | ")}`);
     }
     if (sheet.sampleRows.length > 0) {
-      parts.push("  Sample values (first 8 rows):");
-      for (const row of sheet.sampleRows.slice(0, 8)) {
-        parts.push(`    ${row.slice(0, 15).join("\t")}`);
+      parts.push("  Sample (first 5 rows):");
+      for (const row of sheet.sampleRows.slice(0, 5)) {
+        parts.push(`    ${row.slice(0, 10).join("\t")}`);
       }
     }
     if (sheet.regions && sheet.regions.length > 0) {
-      parts.push("  Pre-classified regions (address | type | font-color):");
-      for (const r of sheet.regions) {
-        const colorNote = r.fontColor ? ` | font:${r.fontColor}` : "";
-        parts.push(`    ${r.address} | ${r.type}${colorNote}`);
+      // Only show N (number) and F (formula) regions — T/E are noise; cap at 40 per sheet
+      const meaningful = sheet.regions.filter((r) => r.type === "N" || r.type === "F").slice(0, 40);
+      if (meaningful.length > 0) {
+        parts.push("  Regions (address | type | font):");
+        for (const r of meaningful) {
+          const colorNote = r.fontColor ? ` | ${r.fontColor}` : "";
+          parts.push(`    ${r.address} | ${r.type}${colorNote}`);
+        }
       }
     }
   }

@@ -3,27 +3,30 @@ import { NW, NH, pathTo } from "./layout";
 
 export function getColors(dark: boolean) {
   return {
-    bg:        dark ? "#1c1c1a" : "#f4f3ee",
-    nodeBg:    dark ? "#262624" : "#ffffff",
-    nodeHov:   dark ? "#2e2e2c" : "#ebebE6",
-    nodeDim:   dark ? "#1e1e1c" : "#f8f7f3",
-    borderDim: dark ? "#2a2a26" : "#e4e2d8",
-    done:      dark ? "#22863a" : "#3B6D11",
-    active:    "#185FA5",
-    saved:     dark ? "#3a6b28" : "#4a7c23",
-    savedBg:   dark ? "#1c2a18" : "#f2f7ef",
-    savedBorder: dark ? "#3a5c28" : "#b8d4a8",
-    text:      dark ? "#c2c0b6" : "#2d2d2a",
-    textDim:   dark ? "#58564e" : "#b8b6ae",
-    textSub:   dark ? "#6e6c64" : "#9c9a90",
-    line:      dark ? "#2e2e28" : "#dddcd4",
-    lineHi:    dark ? "#1a3a5c" : "#bdd7ee",
+    bg:           dark ? "#1c1c1a" : "#f4f3ee",
+    nodeBg:       dark ? "#262624" : "#ffffff",
+    nodeHov:      dark ? "#2e2e2c" : "#ebebE6",
+    nodeDim:      dark ? "#1e1e1c" : "#f8f7f3",
+    borderDim:    dark ? "#2a2a26" : "#e4e2d8",
+    done:         dark ? "#22863a" : "#3B6D11",
+    active:       "#185FA5",
+    saved:        dark ? "#3a6b28" : "#4a7c23",
+    savedBg:      dark ? "#1c2a18" : "#f2f7ef",
+    savedBorder:  dark ? "#3a5c28" : "#b8d4a8",
+    skeleton:     dark ? "#444440" : "#c0bdb4",
+    skeletonBg:   dark ? "#1c1c1a" : "#f4f3ee",
+    text:         dark ? "#c2c0b6" : "#2d2d2a",
+    textDim:      dark ? "#58564e" : "#b8b6ae",
+    textSub:      dark ? "#6e6c64" : "#9c9a90",
+    line:         dark ? "#2e2e28" : "#dddcd4",
+    lineHi:       dark ? "#1a3a5c" : "#bdd7ee",
   };
 }
 
 export function nodeColor(tone: NodeTone, C: ReturnType<typeof getColors>): string {
   if (tone === "done") return C.done;
   if (tone === "active") return C.active;
+  if (tone === "skeleton") return C.skeleton;
   return C.saved;
 }
 
@@ -80,7 +83,26 @@ export function drawScene(
     const isOn  = onPath.has(node.id);
     const isHov = node.id === hoverId;
     const isDim = !isOn && !isSel;
-    const isSaved = node.tone === "saved";
+    const isSaved   = node.tone === "saved";
+    const isSkel    = node.tone === "skeleton";
+
+    // skeleton nodes: dashed ghost outline, no fill dot
+    if (isSkel) {
+      ctx.beginPath();
+      ctx.roundRect(nx, ny, NW, NH, 5);
+      ctx.fillStyle = C.skeletonBg;
+      ctx.fill();
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = isHov ? C.text : C.skeleton;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = "400 9px system-ui,sans-serif";
+      ctx.fillStyle = isHov ? C.textSub : C.skeleton;
+      ctx.textBaseline = "middle";
+      ctx.fillText(truncate(node.label, 12), nx + 8, node.ly);
+      continue;
+    }
 
     // background
     ctx.beginPath();
@@ -110,9 +132,8 @@ export function drawScene(
     if (isSaved) {
       ctx.fillStyle = isDim ? C.savedBorder : C.saved;
       ctx.fill();
-      // small save indicator: white inner ring
       ctx.beginPath(); ctx.arc(dx, dy, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = isSaved ? (isDim ? C.savedBg : C.savedBg) : "#fff";
+      ctx.fillStyle = C.savedBg;
       ctx.fill();
     } else if (node.tone === "done" || node.tone === "active") {
       ctx.fillStyle = isDim ? C.textDim : nodeColor(node.tone, C);

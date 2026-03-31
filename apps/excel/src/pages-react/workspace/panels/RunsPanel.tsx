@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { FileSpreadsheet, FileText, GitBranch, CheckCircle, RefreshCw, ChevronDown } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MonitoredRegion, SourceDocument, StepRecord } from "@/features/types";
 import type { TreeNode } from "../types";
 import { RunTreeCanvas } from "../tree/RunTreeCanvas";
-import { allNodes } from "../tree/layout";
+import { allNodes, withSkeletons } from "../tree/layout";
 
 // ── step detail card ──────────────────────────────────────────────────────────
 
@@ -54,11 +55,12 @@ export function RunsPanel(props: {
   runId: string | undefined;
   canNewScenario: boolean;
   onNewScenario: (name: string) => Promise<void>;
-  onSaveScenario: () => Promise<void>;
+  onSaveScenario: (narrative: string) => Promise<void>;
   root: TreeNode;
   committedOperations: StepRecord[];
   sourceDocuments: SourceDocument[];
   detectedRegions: MonitoredRegion[];
+  isDetectingRegions: boolean;
   onDetectRegions: () => Promise<void>;
   onSelectRegion: (sheetName: string | undefined, address: string) => Promise<void>;
   onSelectNode: (id: string, branchId?: string) => void;
@@ -70,7 +72,19 @@ export function RunsPanel(props: {
   const [regionsExpanded, setRegionsExpanded] = useState(false);
   const [isCreatingScenario, setIsCreatingScenario] = useState(false);
   const [scenarioName, setScenarioName] = useState("");
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [narrative, setNarrative] = useState("");
   const [isFinalizing, setIsFinalizing] = useState(false);
+
+  const decoratedRoot = useMemo(() => withSkeletons(props.root), [props.root]);
+
+  useEffect(() => {
+    setIsCreatingScenario(false);
+    setScenarioName("");
+    setIsSaveModalOpen(false);
+    setNarrative("");
+    setSelectedStepId(null);
+  }, [props.activeBranchName]);
 
   async function handleDetectRegions() {
     setIsScanning(true);
@@ -90,11 +104,13 @@ export function RunsPanel(props: {
   }
 
   async function handleSave() {
+    setIsSaveModalOpen(false);
     setIsFinalizing(true);
     try {
-      await props.onSaveScenario();
+      await props.onSaveScenario(narrative);
     } finally {
       setIsFinalizing(false);
+      setNarrative("");
     }
   }
   const selectedStep = selectedStepId
@@ -102,13 +118,23 @@ export function RunsPanel(props: {
     : null;
 
   function handleSelectNode(id: string, branchId?: string) {
+    // Skeleton node clicks open the appropriate form
+    if (id === "__skeleton_append") {
+      setIsSaveModalOpen(true);
+      return;
+    }
+    if (id === "__skeleton_branch") {
+      setIsCreatingScenario(true);
+      return;
+    }
+
     const isStep = props.committedOperations.some((s) => s.id === id);
     if (isStep) {
       setSelectedStepId((prev) => (prev === id ? null : id));
       return;
     }
     setSelectedStepId(null);
-    // If clicking a finalized branch node, open its snapshot instead of switching
+    // If clicking a saved branch node, open its snapshot instead of switching
     const treeNode = allNodes(props.root).find((n) => n.id === id);
     if (treeNode?.tone === "saved" && treeNode.documentId) {
       props.onOpenWorkbook(treeNode.documentId);
@@ -195,6 +221,40 @@ export function RunsPanel(props: {
               </Button>
             </div>
           </div>
+        ) : isSaveModalOpen ? (
+          /* Save narrative modal */
+          <div className="flex flex-col gap-2 px-3 py-2">
+            <p className="text-[10px] font-medium text-foreground">What did you assume in this scenario?</p>
+            <p className="text-[9px] text-muted-foreground leading-snug">Focus on what's different from the base — method choices, excluded years, judgment calls.</p>
+            <Textarea
+              autoFocus
+              value={narrative}
+              onChange={(e) => setNarrative(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { setIsSaveModalOpen(false); setNarrative(""); }
+              }}
+              placeholder="e.g. Excluded 2017 cat year, blended BF/CL 50/50 for immature AYs, used industry tail…"
+              className="text-[10px] min-h-[72px] resize-none"
+            />
+            <div className="flex gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 h-7 text-[10px]"
+                onClick={() => { setIsSaveModalOpen(false); setNarrative(""); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 h-7 text-[10px] gap-1"
+                onClick={handleSave}
+              >
+                <CheckCircle className="size-3" />
+                Save
+              </Button>
+            </div>
+          </div>
         ) : (
           /* Actions */
           <div className="flex gap-1.5 px-3 py-2">
@@ -211,7 +271,7 @@ export function RunsPanel(props: {
             <Button
               size="sm"
               className="flex-1 h-7 text-[10px] gap-1"
-              onClick={handleSave}
+              onClick={() => setIsSaveModalOpen(true)}
               disabled={!props.canNewScenario || isFinalizing}
             >
               <CheckCircle className="size-3" />
@@ -232,15 +292,15 @@ export function RunsPanel(props: {
               <button
                 type="button"
                 onClick={handleDetectRegions}
-                disabled={isScanning}
+                disabled={isScanning || props.isDetectingRegions}
                 className="flex items-center gap-1 text-[9px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
               >
-                <RefreshCw className={cn("size-2.5", isScanning && "animate-spin")} />
-                {isScanning ? "scanning…" : "scan"}
+                <RefreshCw className={cn("size-2.5", (isScanning || props.isDetectingRegions) && "animate-spin")} />
+                {isScanning || props.isDetectingRegions ? "scanning…" : "scan"}
               </button>
             </div>
 
-            {isScanning ? (
+            {isScanning || props.isDetectingRegions ? (
               <p className="text-[9px] text-muted-foreground text-center py-1">Scanning workbook…</p>
             ) : props.detectedRegions.length === 0 ? (
               <p className="text-[9px] text-muted-foreground text-center py-1">No regions detected</p>
@@ -295,7 +355,7 @@ export function RunsPanel(props: {
           Run history
         </p>
         <RunTreeCanvas
-          root={props.root}
+          root={decoratedRoot}
           initialSelectedId="active"
           onSelectNode={handleSelectNode}
         />
