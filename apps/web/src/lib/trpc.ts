@@ -1,10 +1,5 @@
-import { createTRPCClient, httpBatchLink } from "@trpc/client";
-
-const getApiUrl = () =>
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
-/** Minimal type for auth procedures (avoids importing API router). */
-export type AuthUser = { userId: string; orgId: string; role: string };
+/** Minimal client-side tRPC types (avoids importing API router). */
+export type AuthUser = { userId: string; orgId: string; role: string; isSuperUser: boolean };
 
 export type AuthTRPC = {
   auth: {
@@ -142,18 +137,43 @@ export type AuthTRPC = {
       }>;
     };
   };
+  invitations: {
+    createOrgInvite: {
+      mutate: (input: {
+        organizationName: string;
+        inviteEmail: string;
+      }) => Promise<{
+        organizationId: string;
+        organizationName: string;
+        inviteEmail: string;
+        expiresAt: Date;
+      }>;
+    };
+    getInfo: {
+      query: (input: { token: string }) => Promise<
+        | {
+            valid: true;
+            organizationName: string;
+            inviteEmail: string;
+            expiresAt: Date;
+          }
+        | {
+            valid: false;
+            reason: "not_found" | "expired" | "used";
+          }
+      >;
+    };
+    accept: {
+      mutate: (input: {
+        token: string;
+        fullName: string;
+        password: string;
+      }) => Promise<{
+        ok: true;
+        organizationName: string;
+        inviteEmail: string;
+      }>;
+    };
+  };
 };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const client = createTRPCClient<any>({
-  links: [
-    httpBatchLink({
-      url: `${getApiUrl()}/trpc`,
-      fetch(url, options) {
-        return fetch(url, { ...options, credentials: "include" });
-      },
-    }),
-  ],
-});
-
-export const trpc = client as unknown as AuthTRPC;
 

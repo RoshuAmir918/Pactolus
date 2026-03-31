@@ -11,13 +11,22 @@ function isNonEmptyString(value: unknown): value is string {
   return value != null && String(value) === value && (value as string).length > 0;
 }
 
+function isBoolean(value: unknown): value is boolean {
+  return value === true || value === false;
+}
+
 function parseAuthUser(data: unknown): AuthUser | null {
   if (!isPlainObject(data)) return null;
-  const { userId, orgId, role } = data;
-  if (!isNonEmptyString(userId) || !isNonEmptyString(orgId) || !isNonEmptyString(role)) {
+  const { userId, orgId, role, isSuperUser } = data;
+  if (
+    !isNonEmptyString(userId) ||
+    !isNonEmptyString(orgId) ||
+    !isNonEmptyString(role) ||
+    !isBoolean(isSuperUser)
+  ) {
     return null;
   }
-  return { userId, orgId, role };
+  return { userId, orgId, role, isSuperUser };
 }
 
 const getApiUrl = () =>

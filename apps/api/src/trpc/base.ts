@@ -23,3 +23,13 @@ export const adminProcedure = authenticatedProcedure.use(({ ctx, next }) => {
   }
   return next({ ctx });
 });
+
+export const superUserProcedure = authenticatedProcedure.use(({ ctx, next }) => {
+  if (!ctx.isSuperUser) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Superuser required",
+    });
+  }
+  return next({ ctx });
+});
