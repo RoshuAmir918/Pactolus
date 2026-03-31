@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getMeOnServer } from "@/lib/server-auth";
+import { AdminShell } from "@/components/admin/admin-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +10,8 @@ export default async function AdminLayout({
   children: React.ReactNode;
 }>) {
   const user = await getMeOnServer();
-  if (!user || user.role !== "admin") {
+  if (!user || !user.isSuperUser) {
     notFound();
   }
-  return <>{children}</>;
+  return <AdminShell>{children}</AdminShell>;
 }

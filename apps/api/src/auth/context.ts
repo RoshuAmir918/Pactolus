@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { and, eq } from "drizzle-orm";
 import dbClient from "@api/db/client";
-import { memberships } from "@db/schema";
+import { memberships, users } from "@db/schema";
 
 const { db } = dbClient;
 
@@ -9,6 +9,7 @@ export type RequestContext = {
     userId: string;
     orgId: string;
     role: "admin" | "manager" | "analyst";
+    isSuperUser: boolean;
 };
 
 /** tRPC context: req, res, and optional user (null when not authenticated). */
@@ -34,6 +35,7 @@ export async function resolveContextOptional(req: Request): Promise<RequestConte
             userId: req.user.userId,
             orgId: req.user.orgId,
             role: req.user.role,
+            isSuperUser: req.user.isSuperUser,
         };
     }
 
@@ -49,8 +51,10 @@ export async function resolveContextOptional(req: Request): Promise<RequestConte
             orgId: memberships.orgId,
             role: memberships.role,
             status: memberships.status,
+            isSuperUser: users.isSuperUser,
         })
         .from(memberships)
+        .innerJoin(users, eq(users.id, memberships.userId))
         .where(
             and(
                 eq(memberships.userId, userId),
@@ -66,6 +70,7 @@ export async function resolveContextOptional(req: Request): Promise<RequestConte
         userId: membership.userId,
         orgId: membership.orgId,
         role: membership.role,
+        isSuperUser: membership.isSuperUser,
     };
 }
 

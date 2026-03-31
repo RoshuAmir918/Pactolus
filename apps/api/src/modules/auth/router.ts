@@ -22,7 +22,15 @@ export const authRouter = router({
                 console.log(
                     `[auth.login] success email=${input.email} userId=${user.userId} orgId=${user.orgId} elapsedMs=${Date.now() - startedAt}`,
                 );
-                return { ok: true as const, user: { userId: user.userId, orgId: user.orgId, role: user.role } };
+                return {
+                    ok: true as const,
+                    user: {
+                        userId: user.userId,
+                        orgId: user.orgId,
+                        role: user.role,
+                        isSuperUser: user.isSuperUser,
+                    },
+                };
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 console.log(
