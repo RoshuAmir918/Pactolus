@@ -91,6 +91,69 @@ export const getMonitoredRegionsOutputSchema = z.object({
   ),
 });
 
+export const detectWorkbookRegionsInputSchema = z.object({
+  snapshotId: z.string().min(1),
+  sheets: z.array(
+    z.object({
+      sheetName: z.string().min(1),
+      headers: z.array(z.string()),
+      sampleRows: z.array(z.array(z.string())),
+      regions: z.array(z.object({
+        address: z.string(),
+        type: z.string(),
+        fontColor: z.string(),
+      })).optional(),
+      rowCount: z.number().int(),
+      columnCount: z.number().int(),
+    }),
+  ).min(1).max(10),
+});
+
+const detectedSheetSchema = z.object({
+  sheetName: z.string(),
+  inputRegions: z.array(
+    z.object({ address: z.string(), reason: z.string(), confidencePercent: z.number().int() }),
+  ),
+  outputRegions: z.array(
+    z.object({ address: z.string(), reason: z.string(), confidencePercent: z.number().int() }),
+  ),
+});
+
+export const detectWorkbookRegionsOutputSchema = z.object({
+  sheets: z.array(detectedSheetSchema),
+  promptMessage: z.string().nullable(),
+});
+
+export const extractScenarioAssumptionsInputSchema = z.object({
+  snapshotId: z.string().min(1),
+  sheets: z.array(
+    z.object({
+      sheetName: z.string().min(1),
+      headers: z.array(z.string()),
+      sampleRows: z.array(z.array(z.string())),
+      regions: z.array(z.object({
+        address: z.string(),
+        type: z.string(),
+        fontColor: z.string(),
+      })).optional(),
+      rowCount: z.number().int(),
+      columnCount: z.number().int(),
+    }),
+  ).min(1).max(10),
+});
+
+export const extractScenarioAssumptionsOutputSchema = z.object({
+  assumptions: z.array(
+    z.object({
+      key: z.string(),
+      value: z.string(),
+      unit: z.string().nullable(),
+      confidence: z.number(),
+      rationale: z.string(),
+    }),
+  ),
+});
+
 export const ingestRegionEventInputSchema = z.object({
   snapshotId: z.uuid(),
   sheetName: z.string().min(1),

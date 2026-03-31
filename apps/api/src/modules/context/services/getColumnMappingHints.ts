@@ -50,7 +50,7 @@ export async function getColumnMappingHints(
 
   const contextCandidates = await loadContextCandidates(input.orgId, input.snapshotId);
   const prompt = buildPrompt(input.targetColumns, contextCandidates, input.maxSuggestionsPerColumn);
-  const model = process.env.CLAUDE_MODEL ?? "claude-3-5-sonnet-latest";
+  const model = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-5";
   const aiRaw = await callAnthropicJson({
     apiKey,
     model,

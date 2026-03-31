@@ -1,29 +1,96 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { AuthPage } from "@/pages-react/AuthPage";
 import { RunSetupPage } from "@/pages-react/RunSetupPage";
-import { WorkspacePage } from "@/pages-react/WorkspacePage";
+import { WorkspacePage } from "@/pages-react/workspace";
 import { getApiClient, normalizeApiUrl, testApiConnection } from "@/lib/api/client";
 import {
   appendRunStepIfActive,
-  isSelectedBranchActive,
   toBranchOptions,
   toRunOptions,
 } from "@/features/operations/actions";
-import { useExcelSessionState } from "@/features/session/store";
-import type { ClientOption, RunSession, SnapshotOption } from "@/features/types";
+import {
+  apiUrlAtom,
+  authenticatedAtom,
+  authEmailAtom,
+  authSummaryAtom,
+  availableBranchesAtom,
+  availableClientsAtom,
+  availableRunsAtom,
+  availableSnapshotsAtom,
+  allSnapshotsAtom,
+  chatMessagesAtom,
+  committedOperationsAtom,
+  currentPageAtom,
+  detectedRegionsAtom,
+  sourceDocumentsAtom,
+  isBusyAtom,
+  officeReadyAtom,
+  runModeAtom,
+  runSessionAtom,
+  runSummaryAtom,
+  selectedBranchIdAtom,
+  selectedClientIdAtom,
+  selectedRunIdAtom,
+  snapshotIdAtom,
+  statusAtom,
+} from "@/features/session/atoms";
+import { getWorkbookBlob, captureAllSheetSlices, selectRange, WORKBOOK_CONTENT_TYPE } from "@/lib/office/worksheet";
+import { getCachedDownloadUrl, setCachedDownloadUrl } from "@/lib/api/downloadCache";
+import type { RunSession, StepRecord } from "@/features/types";
 
 export default function App() {
-  const state = useExcelSessionState();
-  const [apiUrl, setApiUrl] = useState("https://localhost:3001");
+  // ── persisted atoms ──────────────────────────────────────────────────────────
+  const [apiUrl, setApiUrl] = useAtom(apiUrlAtom);
+  const [selectedClientId, setSelectedClientId] = useAtom(selectedClientIdAtom);
+  const [snapshotId, setSnapshotId] = useAtom(snapshotIdAtom);
+  const [runMode, setRunMode] = useAtom(runModeAtom);
+  const [selectedRunId, setSelectedRunId] = useAtom(selectedRunIdAtom);
+  const [selectedBranchId, setSelectedBranchId] = useAtom(selectedBranchIdAtom);
+  const [runSession, setRunSession] = useAtom(runSessionAtom);
+
+  // ── ephemeral atoms ──────────────────────────────────────────────────────────
+  const [currentPage, setCurrentPage] = useAtom(currentPageAtom);
+  const [, setOfficeReady] = useAtom(officeReadyAtom);
+  const [authenticated, setAuthenticated] = useAtom(authenticatedAtom);
+  const [, setAuthEmail] = useAtom(authEmailAtom);
+  const [status, setStatus] = useAtom(statusAtom);
+  const [isBusy, setIsBusy] = useAtom(isBusyAtom);
+  const [availableClients, setAvailableClients] = useAtom(availableClientsAtom);
+  const [, setAllSnapshots] = useAtom(allSnapshotsAtom);
+  const [availableRuns, setAvailableRuns] = useAtom(availableRunsAtom);
+  const [availableBranches, setAvailableBranches] = useAtom(availableBranchesAtom);
+  const [committedOperations, setCommittedOperations] = useAtom(committedOperationsAtom);
+  const [sourceDocuments, setSourceDocuments] = useAtom(sourceDocumentsAtom);
+  const [detectedRegions, setDetectedRegions] = useAtom(detectedRegionsAtom);
+  const [, setChatMessages] = useAtom(chatMessagesAtom);
+
+  // ── derived atoms ────────────────────────────────────────────────────────────
+  const availableSnapshots = useAtomValue(availableSnapshotsAtom);
+  const authSummary = useAtomValue(authSummaryAtom);
+  const runSummary = useAtomValue(runSummaryAtom);
+
+  // ── local ui-only state (no persistence needed) ───────────────────────────────
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [snapshotId, setSnapshotId] = useState("");
-  const [selectedClientId, setSelectedClientId] = useState("");
-  const [availableClients, setAvailableClients] = useState<ClientOption[]>([]);
-  const [allSnapshots, setAllSnapshots] = useState<SnapshotOption[]>([]);
-  const [runMode, setRunMode] = useState<"create" | "select">("create");
-  const [selectedRunId, setSelectedRunId] = useState("");
-  const [selectedBranchId, setSelectedBranchId] = useState("");
+
+  const normalizedApiUrl = normalizeApiUrl(apiUrl);
+
+  // ── helpers ──────────────────────────────────────────────────────────────────
+
+  function setOk(message: string) {
+    setStatus({ kind: "ok", message });
+  }
+
+  function setError(message: string) {
+    setStatus({ kind: "error", message });
+  }
+
+  function mergeRunSession(values: Partial<RunSession>) {
+    setRunSession((prev) => ({ ...prev, ...values }));
+  }
+
+  // ── boot ──────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!("Office" in window)) {
@@ -35,36 +102,15 @@ export default function App() {
         setError("This add-in currently supports only Excel.");
         return;
       }
-      state.setOfficeReady(true);
+      setOfficeReady(true);
       setOk("Connected to Excel.");
     });
   }, []);
 
-  function setOk(message: string) {
-    state.setStatus({ kind: "ok", message });
-  }
-
-  function setError(message: string) {
-    state.setStatus({ kind: "error", message });
-  }
-
-  function mergeRunSession(values: Partial<RunSession>) {
-    state.setRunSession((prev) => ({
-      ...prev,
-      ...values,
-    }));
-  }
-
-  const normalizedApiUrl = useMemo(() => normalizeApiUrl(apiUrl), [apiUrl]);
-  const availableSnapshots = useMemo(
-    () => allSnapshots.filter((snapshot) => snapshot.clientId === selectedClientId),
-    [allSnapshots, selectedClientId],
-  );
+  // ── api helpers ───────────────────────────────────────────────────────────────
 
   async function loadClientAndSnapshotOptions() {
-    if (!normalizedApiUrl) {
-      return;
-    }
+    if (!normalizedApiUrl) return;
     try {
       const client = getApiClient(normalizedApiUrl);
       const [clients, snapshots] = await Promise.all([
@@ -103,12 +149,14 @@ export default function App() {
     }
   }
 
+  // ── auth ──────────────────────────────────────────────────────────────────────
+
   async function onTestConnection() {
     if (!normalizedApiUrl) {
       setError("Enter API URL.");
       return;
     }
-    state.setIsBusy(true);
+    setIsBusy(true);
     try {
       const result = await testApiConnection(normalizedApiUrl);
       if (!result.healthOk) {
@@ -123,12 +171,12 @@ export default function App() {
     } catch (error) {
       setError(`Connection test failed: ${formatError(error)}`);
     } finally {
-      state.setIsBusy(false);
+      setIsBusy(false);
     }
   }
 
   async function onLogin() {
-    if (state.authenticated) {
+    if (authenticated) {
       setOk("Already authenticated. Use Logout to switch account.");
       return;
     }
@@ -136,48 +184,77 @@ export default function App() {
       setError("Enter API URL, email, and password.");
       return;
     }
-    state.setIsBusy(true);
+    setIsBusy(true);
     setOk("Logging in... please wait.");
     try {
       const client = getApiClient(normalizedApiUrl);
       await client.auth.login.mutate({ email: email.trim(), password });
       await client.auth.me.query();
-      state.setAuthenticated(true);
-      state.setAuthEmail(email.trim());
+      setAuthenticated(true);
+      setAuthEmail(email.trim());
       await loadClientAndSnapshotOptions();
-      state.setCurrentPage("run");
+      // restore persisted snapshot/run/branch selection
+      if (snapshotId) {
+        await fetchRuns(snapshotId);
+        if (selectedRunId) {
+          await fetchBranches(selectedRunId);
+        }
+      }
+      setCurrentPage("run");
       setOk("Authenticated with Pactolus API.");
     } catch (error) {
-      state.setAuthenticated(false);
-      state.setAuthEmail(null);
+      setAuthenticated(false);
+      setAuthEmail(null);
       setError(`Login failed: ${formatError(error)}`);
     } finally {
-      state.setIsBusy(false);
+      setIsBusy(false);
     }
   }
 
   async function onLogout() {
-    state.setAuthenticated(false);
-    state.setAuthEmail(null);
-    state.setRunSession({
-      runId: null,
-      branchId: null,
-      lastStepId: null,
-      startedAtIso: null,
-    });
-    state.setAvailableRuns([]);
-    state.setAvailableBranches([]);
-    state.setBranchSummaryText("No branch summary yet.");
+    setAuthenticated(false);
+    setAuthEmail(null);
+    setRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
+    setAvailableRuns([]);
+    setAvailableBranches([]);
     setAvailableClients([]);
     setAllSnapshots([]);
     setSelectedClientId("");
     setSnapshotId("");
-    state.setCurrentPage("auth");
+    setSelectedRunId("");
+    setSelectedBranchId("");
+    setCurrentPage("auth");
     setOk("Logged out in add-in session.");
   }
 
-  async function onLoadRuns() {
-    if (!state.authenticated) {
+  // ── run setup ─────────────────────────────────────────────────────────────────
+
+  async function fetchRuns(resolvedSnapshotId: string) {
+    const client = getApiClient(normalizedApiUrl);
+    const result = await client.operations.getRunsBySnapshot.query({
+      snapshotId: resolvedSnapshotId.trim(),
+      limit: 25,
+    });
+    setAvailableRuns(toRunOptions(result.runs));
+    return result.runs;
+  }
+
+  async function fetchBranches(runId: string) {
+    const client = getApiClient(normalizedApiUrl);
+    const result = await client.operations.getRunBranches.query({ runId });
+    const options = toBranchOptions(result.branches);
+    setAvailableBranches(options);
+    // auto-select the first active branch — no manual branch picking needed
+    const auto = options.find((b) => b.status === "active") ?? options[0];
+    if (auto) {
+      setSelectedBranchId(auto.id);
+      mergeRunSession({ runId, branchId: auto.id, lastStepId: null, startedAtIso: null });
+    }
+    return result.branches;
+  }
+
+  async function onLoadRuns(snapshotIdOverride?: string) {
+    if (!authenticated) {
       setError("Login first.");
       return;
     }
@@ -185,22 +262,18 @@ export default function App() {
       setError("Select a client first.");
       return;
     }
-    if (!snapshotId.trim()) {
+    const resolvedSnapshotId = snapshotIdOverride ?? snapshotId;
+    if (!resolvedSnapshotId.trim()) {
       setError("Enter a snapshot ID before loading runs.");
       return;
     }
     try {
-      const client = getApiClient(normalizedApiUrl);
-      const result = await client.operations.getRunsBySnapshot.query({
-        snapshotId: snapshotId.trim(),
-        limit: 25,
-      });
-      state.setAvailableRuns(toRunOptions(result.runs));
-      state.setAvailableBranches([]);
+      const runs = await fetchRuns(resolvedSnapshotId);
+      setAvailableBranches([]);
       setSelectedRunId("");
       setSelectedBranchId("");
       mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
-      setOk(`Loaded ${result.runs.length} run(s). Select a run to load branches.`);
+      setOk(`Loaded ${runs.length} run(s). Select a run to load branches.`);
     } catch (error) {
       setError(`Load runs failed: ${formatError(error)}`);
     }
@@ -209,8 +282,8 @@ export default function App() {
   function onSelectClient(clientId: string) {
     setSelectedClientId(clientId);
     setSnapshotId("");
-    state.setAvailableRuns([]);
-    state.setAvailableBranches([]);
+    setAvailableRuns([]);
+    setAvailableBranches([]);
     setSelectedRunId("");
     setSelectedBranchId("");
     mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
@@ -219,18 +292,13 @@ export default function App() {
   async function onSelectRun(runId: string) {
     setSelectedRunId(runId);
     if (!runId) {
-      state.setAvailableBranches([]);
+      setAvailableBranches([]);
       setSelectedBranchId("");
       mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
       return;
     }
     try {
-      const client = getApiClient(normalizedApiUrl);
-      const result = await client.operations.getRunBranches.query({ runId });
-      state.setAvailableBranches(toBranchOptions(result.branches));
-      mergeRunSession({ runId, branchId: null, lastStepId: null, startedAtIso: null });
-      setSelectedBranchId("");
-      setOk(`Loaded ${result.branches.length} branch(es). Select one to continue.`);
+      await fetchBranches(runId);
     } catch (error) {
       setError(`Load branches failed: ${formatError(error)}`);
     }
@@ -249,35 +317,36 @@ export default function App() {
     }
   }
 
-  function onSelectBranchFromWorkspace(branchId: string) {
+  async function onSelectBranchFromWorkspace(branchId: string) {
     setSelectedBranchId(branchId);
     mergeRunSession({
-      runId: state.runSession.runId,
+      runId: runSession.runId,
       branchId,
       lastStepId: null,
       startedAtIso: new Date().toISOString(),
     });
     setOk("Active branch changed.");
+    await onLoadCommittedOperations(runSession.runId ?? undefined, branchId);
   }
 
   async function onDeleteBranch(branchId: string) {
-    if (!state.runSession.runId) {
+    if (!runSession.runId) {
       setError("No active run.");
       return;
     }
     try {
       const client = getApiClient(normalizedApiUrl);
       await client.operations.archiveBranch.mutate({
-        runId: state.runSession.runId,
+        runId: runSession.runId,
         branchId,
       });
       const branchesResult = await client.operations.getRunBranches.query({
-        runId: state.runSession.runId,
+        runId: runSession.runId,
       });
       const refreshed = toBranchOptions(branchesResult.branches);
-      state.setAvailableBranches(refreshed);
+      setAvailableBranches(refreshed);
 
-      if (state.runSession.branchId === branchId) {
+      if (runSession.branchId === branchId) {
         const fallback =
           refreshed.find((branch) => branch.status === "active") ?? refreshed[0] ?? null;
         setSelectedBranchId(fallback?.id ?? "");
@@ -310,7 +379,7 @@ export default function App() {
       try {
         const runResult = await client.operations.createRun.mutate({
           snapshotId: snapshotId.trim(),
-          name: "Excel run",
+          name: "Analysis",
         });
         setSelectedRunId(runResult.runId);
         setSelectedBranchId(runResult.mainBranchId);
@@ -320,102 +389,392 @@ export default function App() {
           lastStepId: null,
           startedAtIso: new Date().toISOString(),
         });
+        await onLoadCommittedOperations(runResult.runId, runResult.mainBranchId);
         setOk("Run created. Continue in workspace.");
       } catch (error) {
         setError(`Create run failed: ${formatError(error)}`);
         return;
       }
-    } else if (!state.runSession.runId || !state.runSession.branchId) {
+    } else if (!runSession.runId || !runSession.branchId) {
       setError("Select an existing run and branch before continuing.");
       return;
+    } else {
+      await onLoadCommittedOperations(runSession.runId, runSession.branchId);
     }
 
-    state.setCurrentPage("workspace");
+    // Load source documents for the workspace doc strip
+    try {
+      const docs = await client.storage.getSourceDocuments.query({ snapshotId: snapshotId.trim() });
+      setSourceDocuments(docs.documents);
+    } catch {
+      setSourceDocuments([]);
+    }
+
+    setCurrentPage("workspace");
+    // Fire-and-forget — don't block navigation
+    runWorkbookDetection();
   }
 
-  async function onForkBranch() {
-    if (!state.runSession.runId || !state.runSession.branchId) {
-      setError("Select a run and branch before forking.");
+  // ── branch actions ────────────────────────────────────────────────────────────
+
+  async function onNewScenario(name: string) {
+    if (!runSession.runId || !runSession.branchId) {
+      setError("Select a run and branch before creating a scenario.");
       return;
     }
-    const branchName = `branch-${Date.now()}`;
     const client = getApiClient(normalizedApiUrl);
+
+    // 1. Auto-snapshot current workbook state onto the current branch
+    let snapshotStepId: string | null = runSession.lastStepId;
+    try {
+      const fileName = `scenario-snapshot-${Date.now()}.xlsx`;
+      const { blob, sizeBytes } = await getWorkbookBlob();
+      const upload = await client.storage.getUploadUrl.mutate({
+        snapshotId,
+        fileName,
+        contentType: WORKBOOK_CONTENT_TYPE,
+        sizeBytes,
+      });
+      await fetch(upload.uploadUrl, {
+        method: "PUT",
+        body: blob,
+        headers: { "Content-Type": WORKBOOK_CONTENT_TYPE },
+      });
+      const completed = await client.storage.completeUpload.mutate({
+        snapshotId,
+        bucket: upload.bucket,
+        objectKey: upload.objectKey,
+        fileName,
+        contentType: WORKBOOK_CONTENT_TYPE,
+        sizeBytes,
+        documentType: "workbook_tool",
+      });
+      const stepId = await appendRunStepIfActive({
+        client,
+        runSession,
+        stepType: "scenario_snapshot",
+        documentId: completed.documentId,
+        idempotencyKey: `scenario-snapshot:${runSession.branchId}:${Date.now()}`,
+        parametersJson: { scenarioName: name, snapshotAt: new Date().toISOString() },
+      });
+      if (stepId) snapshotStepId = stepId;
+    } catch {
+      // proceed without snapshot — fork still happens
+    }
+
+    // 2. Fork from that snapshot point into a named scenario branch
     try {
       const created = await client.operations.createBranch.mutate({
-        runId: state.runSession.runId,
-        name: branchName,
-        parentBranchId: state.runSession.branchId,
-        forkedFromStepId: state.runSession.lastStepId ?? undefined,
+        runId: runSession.runId,
+        name,
+        parentBranchId: runSession.branchId,
+        forkedFromStepId: snapshotStepId ?? undefined,
       });
       const forkStepId = await appendRunStepIfActive({
         client,
-        runSession: state.runSession,
-        runId: state.runSession.runId,
+        runSession: { ...runSession, branchId: created.branchId },
+        runId: runSession.runId,
         branchId: created.branchId,
         stepType: "branch_forked",
-        idempotencyKey: `branch-forked:${created.branchId}:${state.runSession.lastStepId ?? "root"}`,
+        idempotencyKey: `branch-forked:${created.branchId}`,
         parametersJson: {
-          parentBranchId: state.runSession.branchId,
+          parentBranchId: runSession.branchId,
           newBranchId: created.branchId,
-          branchName,
-          forkedFromStepId: state.runSession.lastStepId ?? null,
+          branchName: name,
+          forkedFromStepId: snapshotStepId ?? null,
         },
       });
       const branchesResult = await client.operations.getRunBranches.query({
-        runId: state.runSession.runId,
+        runId: runSession.runId,
       });
-      state.setAvailableBranches(toBranchOptions(branchesResult.branches));
+      setAvailableBranches(toBranchOptions(branchesResult.branches));
       setSelectedBranchId(created.branchId);
       mergeRunSession({
         branchId: created.branchId,
         lastStepId: forkStepId ?? null,
         startedAtIso: new Date().toISOString(),
       });
-      setOk(`Forked new branch "${branchName}".`);
+      await onLoadCommittedOperations(runSession.runId, created.branchId);
+      setOk(`Created scenario "${name}".`);
     } catch (error) {
-      setError(`Fork branch failed: ${formatError(error)}`);
+      setError(`Create scenario failed: ${formatError(error)}`);
     }
   }
 
-  async function onCompleteBranch() {
-    if (!state.runSession.runId || !state.runSession.branchId) {
-      setError("Select a run and branch before completing.");
-      return;
+  async function onSaveScenario() {
+    if (!runSession.runId || !runSession.branchId) return;
+    const client = getApiClient(normalizedApiUrl);
+    const savedAt = new Date().toISOString();
+
+    // 1. Upload workbook snapshot
+    let documentId: string | undefined;
+    try {
+      const fileName = `scenario-save-${Date.now()}.xlsx`;
+      const { blob, sizeBytes } = await getWorkbookBlob();
+      const upload = await client.storage.getUploadUrl.mutate({
+        snapshotId,
+        fileName,
+        contentType: WORKBOOK_CONTENT_TYPE,
+        sizeBytes,
+      });
+      await fetch(upload.uploadUrl, {
+        method: "PUT",
+        body: blob,
+        headers: { "Content-Type": WORKBOOK_CONTENT_TYPE },
+      });
+      const completed = await client.storage.completeUpload.mutate({
+        snapshotId,
+        bucket: upload.bucket,
+        objectKey: upload.objectKey,
+        fileName,
+        contentType: WORKBOOK_CONTENT_TYPE,
+        sizeBytes,
+        documentType: "workbook_tool",
+      });
+      documentId = completed.documentId;
+    } catch {
+      // proceed without snapshot
     }
+
+    // 2. Append snapshot step
+    try {
+      const stepId = await appendRunStepIfActive({
+        client,
+        runSession,
+        stepType: "scenario_snapshot",
+        documentId,
+        idempotencyKey: `scenario-save:${runSession.branchId}:${Date.now()}`,
+        parametersJson: { savedAt },
+      });
+      if (stepId) mergeRunSession({ lastStepId: stepId });
+    } catch {
+      // snapshot step optional
+    }
+
+    // 3. Extract assumptions in background and append as a step
+    try {
+      const sheets = await captureAllSheetSlices();
+      if (sheets.length > 0) {
+        const result = await client.excel.extractScenarioAssumptions.mutate({
+          snapshotId: snapshotId.trim(),
+          sheets,
+        });
+        if (result.assumptions.length > 0) {
+          const stepId = await appendRunStepIfActive({
+            client,
+            runSession,
+            stepType: "assumptions_extracted",
+            idempotencyKey: `assumptions:${runSession.branchId}:${Date.now()}`,
+            parametersJson: {
+              assumptions: result.assumptions,
+              extractedAt: new Date().toISOString(),
+            },
+          });
+          if (stepId) mergeRunSession({ lastStepId: stepId });
+        }
+      }
+    } catch {
+      // assumption extraction is best-effort
+    }
+
+    await onLoadCommittedOperations();
+    setOk("Scenario saved.");
+  }
+
+  // ── committed operations ──────────────────────────────────────────────────────
+
+  async function onLoadCommittedOperations(runIdOverride?: string, branchIdOverride?: string) {
+    const runId = runIdOverride ?? runSession.runId;
+    const branchId = branchIdOverride ?? runSession.branchId;
+    if (!runId || !branchId) return;
     try {
       const client = getApiClient(normalizedApiUrl);
-      const result = await client.operations.completeBranch.mutate({
-        runId: state.runSession.runId,
-        branchId: state.runSession.branchId,
-        idempotencyKey: `branch-complete:${state.runSession.branchId}`,
-        generateAiSummary: true,
-      });
-      const branchesResult = await client.operations.getRunBranches.query({
-        runId: state.runSession.runId,
-      });
-      state.setAvailableBranches(toBranchOptions(branchesResult.branches));
-      mergeRunSession({ lastStepId: result.completionStepId });
-      setOk("Branch completed.");
-    } catch (error) {
-      setError(`Complete branch failed: ${formatError(error)}`);
+      const result = await client.operations.getBranchEffectiveHistory.query({ runId, branchId });
+      setCommittedOperations(
+        result.steps.map(
+          (s: {
+            id: string;
+            stepIndex: number;
+            stepType: string;
+            parametersJson: unknown;
+            branchId: string;
+            documentId: string | null;
+          }) => ({
+            id: s.id,
+            stepIndex: s.stepIndex,
+            stepType: s.stepType,
+            parametersJson: s.parametersJson,
+            branchId: s.branchId,
+            documentId: s.documentId,
+          }),
+        ),
+      );
+    } catch {
+      setCommittedOperations([]);
     }
   }
+
+  async function resolveDownloadUrl(documentId: string): Promise<string> {
+    const cached = getCachedDownloadUrl(documentId);
+    if (cached) return cached;
+    const client = getApiClient(normalizedApiUrl);
+    const { downloadUrl } = await client.storage.getDownloadUrlByDocument.query({ documentId });
+    setCachedDownloadUrl(documentId, downloadUrl);
+    return downloadUrl;
+  }
+
+  async function onOpenWorkbook(documentId: string) {
+    try {
+      Office.context.ui.openBrowserWindow(await resolveDownloadUrl(documentId));
+    } catch (error) {
+      setError(`Failed to open workbook: ${formatError(error)}`);
+    }
+  }
+
+  async function onOpenDocument(documentId: string, _fileExtension: string | null) {
+    try {
+      Office.context.ui.openBrowserWindow(await resolveDownloadUrl(documentId));
+    } catch (error) {
+      setError(`Failed to open document: ${formatError(error)}`);
+    }
+  }
+
+  // ── workbook region detection ─────────────────────────────────────────────────
+
+  async function runWorkbookDetection() {
+    if (!snapshotId.trim()) return;
+    try {
+      const sheets = await captureAllSheetSlices();
+      if (sheets.length === 0) return;
+      const client = getApiClient(normalizedApiUrl);
+      const result = await client.excel.detectWorkbookRegions.mutate({ snapshotId: snapshotId.trim(), sheets });
+      console.log("[detect] result:", JSON.stringify(result, null, 2));
+      type RegionItem = { address: string; reason: string; confidencePercent: number };
+      type SheetResult = { sheetName: string; inputRegions: RegionItem[]; outputRegions: RegionItem[] };
+      const allRegions = result.sheets.flatMap((s: SheetResult) => [
+        ...s.inputRegions.map((r) => ({
+          address: r.address,
+          regionType: "input" as const,
+          confidencePercent: r.confidencePercent,
+          userConfirmed: false,
+          sheetName: s.sheetName,
+          reason: r.reason,
+        })),
+        ...s.outputRegions.map((r) => ({
+          address: r.address,
+          regionType: "output" as const,
+          confidencePercent: r.confidencePercent,
+          userConfirmed: false,
+          sheetName: s.sheetName,
+          reason: r.reason,
+        })),
+      ]);
+      setDetectedRegions(allRegions);
+      if (result.promptMessage) {
+        setChatMessages((prev) => [
+          ...prev,
+          { role: "assistant", text: result.promptMessage! },
+        ]);
+      }
+    } catch {
+      // silent — best-effort
+    }
+  }
+
+  // ── chat ──────────────────────────────────────────────────────────────────────
+
+  async function onAsk(
+    text: string,
+    context: {
+      runId: string;
+      branchId: string | null;
+      selectedRange: string | null;
+      history: Array<{ role: "user" | "assistant"; text: string }>;
+    },
+  ): Promise<{ reply: string; excelAction?: { type: "write_range"; startCell: string; values: unknown[][]; sheetName?: string; description: string } | null }> {
+    const client = getApiClient(normalizedApiUrl);
+    const result = await client.chat.sendMessage.mutate({
+      snapshotId: snapshotId.trim(),
+      runId: context.runId || null,
+      branchId: context.branchId,
+      messages: [
+        ...context.history,
+        { role: "user", text },
+      ],
+      selectedRange: context.selectedRange,
+    });
+    return { reply: result.reply, excelAction: result.excelAction };
+  }
+
+  async function onUploadDocument(file: File) {
+    if (!snapshotId.trim()) {
+      throw new Error("Select a snapshot before uploading.");
+    }
+    if (file.size <= 0) {
+      throw new Error("File is empty.");
+    }
+
+    const lowerName = file.name.toLowerCase();
+    const isCsv = lowerName.endsWith(".csv");
+    const isXlsx = lowerName.endsWith(".xlsx");
+    if (!isCsv && !isXlsx) {
+      throw new Error("Only .xlsx and .csv files are supported.");
+    }
+
+    const contentType = isCsv
+      ? "text/csv"
+      : WORKBOOK_CONTENT_TYPE;
+    const client = getApiClient(normalizedApiUrl);
+
+    setOk(`Uploading "${file.name}"...`);
+    const { uploadUrl, bucket, objectKey } = await client.storage.getUploadUrl.mutate({
+      snapshotId: snapshotId.trim(),
+      fileName: file.name,
+      contentType,
+      sizeBytes: file.size,
+    });
+
+    const putRes = await fetch(uploadUrl, {
+      method: "PUT",
+      body: file,
+      headers: { "Content-Type": contentType },
+    });
+    if (!putRes.ok) {
+      throw new Error(`Upload failed (${putRes.status}).`);
+    }
+
+    const completed = await client.storage.completeUpload.mutate({
+      snapshotId: snapshotId.trim(),
+      bucket,
+      objectKey,
+      fileName: file.name,
+      contentType,
+      sizeBytes: file.size,
+    });
+
+    await client.ingestion.startDocumentIngestion.mutate({
+      snapshotId: snapshotId.trim(),
+      documentId: completed.documentId,
+    });
+    setOk(`Uploaded "${file.name}". Ingestion started.`);
+  }
+
+  // ── render ────────────────────────────────────────────────────────────────────
 
   const canContinueToWorkspace =
     Boolean(selectedClientId && snapshotId.trim()) &&
-    (runMode === "create" || Boolean(state.runSession.runId && state.runSession.branchId));
-  const canActiveBranch = isSelectedBranchActive(state.runSession, state.availableBranches);
+    (runMode === "create" || Boolean(runSession.runId));
 
-  if (state.currentPage === "auth") {
+  if (currentPage === "auth") {
     return (
       <AuthPage
         apiUrl={apiUrl}
         email={email}
         password={password}
-        authSummary={state.authSummary}
-        status={state.status}
-        loggingIn={state.isBusy}
-        canLogout={state.authenticated}
+        authSummary={authSummary}
+        status={status}
+        loggingIn={isBusy}
+        canLogout={authenticated}
         onApiUrlChange={setApiUrl}
         onEmailChange={setEmail}
         onPasswordChange={setPassword}
@@ -426,42 +785,40 @@ export default function App() {
     );
   }
 
-  if (state.currentPage === "run") {
+  if (currentPage === "run") {
     return (
       <RunSetupPage
         snapshotId={snapshotId}
         selectedClientId={selectedClientId}
         runMode={runMode}
-        runSummary={state.runSummary}
+        runSummary={runSummary}
         availableClients={availableClients}
         availableSnapshots={availableSnapshots}
-        availableRuns={state.availableRuns}
-        availableBranches={state.availableBranches}
+        availableRuns={availableRuns}
         selectedRunId={selectedRunId}
-        selectedBranchId={selectedBranchId}
-        status={state.status}
+        selectedBranchName={availableBranches.find((b) => b.id === selectedBranchId)?.name ?? null}
+        status={status}
         canContinue={canContinueToWorkspace}
         onReloadContext={loadClientAndSnapshotOptions}
         onClientSelect={onSelectClient}
         onSnapshotIdChange={(value) => {
           setSnapshotId(value);
-          state.setAvailableRuns([]);
-          state.setAvailableBranches([]);
+          setAvailableRuns([]);
+          setAvailableBranches([]);
           setSelectedRunId("");
           setSelectedBranchId("");
           mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
         }}
         onRunModeChange={(value) => {
           setRunMode(value);
-          state.setRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
-          state.setAvailableRuns([]);
-          state.setAvailableBranches([]);
-          setSelectedRunId("");
-          setSelectedBranchId("");
+          if (value === "create") {
+            setSelectedRunId("");
+            setSelectedBranchId("");
+            mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
+          }
         }}
         onLoadRuns={onLoadRuns}
         onRunSelect={onSelectRun}
-        onBranchSelect={onSelectBranch}
         onContinue={onContinueFromRunSetup}
       />
     );
@@ -469,19 +826,29 @@ export default function App() {
 
   return (
     <WorkspacePage
-      runSession={state.runSession}
-      availableBranches={state.availableBranches}
-      status={state.status}
-      canFork={Boolean(state.runSession.runId && state.runSession.branchId)}
-      canCompleteBranch={Boolean(state.runSession.runId && state.runSession.branchId && canActiveBranch)}
-      onBackToRun={() => state.setCurrentPage("run")}
+      runSession={runSession}
+      availableBranches={availableBranches}
+      committedOperations={committedOperations}
+      status={status}
+      canFork={Boolean(runSession.runId && runSession.branchId)}
+      onBackToRun={() => setCurrentPage("run")}
       onSelectBranch={onSelectBranchFromWorkspace}
       onDeleteBranch={onDeleteBranch}
-      onForkBranch={onForkBranch}
-      onCompleteBranch={onCompleteBranch}
+      onNewScenario={onNewScenario}
+      onSaveScenario={onSaveScenario}
+      sourceDocuments={sourceDocuments}
+      detectedRegions={detectedRegions}
+      onDetectRegions={runWorkbookDetection}
+      onSelectRegion={selectRange}
+      onOpenWorkbook={onOpenWorkbook}
+      onOpenDocument={onOpenDocument}
+      onUploadDocument={onUploadDocument}
+      onAsk={onAsk}
     />
   );
 }
+
+// ── utils ─────────────────────────────────────────────────────────────────────
 
 function formatError(error: unknown): string {
   if (error instanceof Error) {

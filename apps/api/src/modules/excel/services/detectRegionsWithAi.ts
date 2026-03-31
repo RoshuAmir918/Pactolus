@@ -32,7 +32,7 @@ export async function detectRegionsWithAi(
     throw new Error("ANTHROPIC_API_KEY is not configured");
   }
 
-  const model = process.env.CLAUDE_MODEL ?? "claude-3-5-sonnet-latest";
+  const model = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-5";
   const prompt = buildPrompt(input);
   const raw = await callAnthropicJson({ apiKey, model, prompt });
   return normalizeAiResponse(raw, input.maxRegionsPerType);

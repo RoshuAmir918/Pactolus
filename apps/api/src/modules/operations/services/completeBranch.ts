@@ -148,7 +148,7 @@ async function maybeSummarizeAssumptionDiff(input: {
     return null;
   }
 
-  const model = process.env.CLAUDE_MODEL ?? "claude-3-5-sonnet-latest";
+  const model = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-5";
   const prompt = buildAiPrompt(input);
   try {
     const raw = await callAnthropicJson({

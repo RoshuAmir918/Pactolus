@@ -88,7 +88,7 @@ function resolveClaudeModel(configuredModel: string | undefined): string {
     return DEFAULT_CLAUDE_MODEL;
   }
 
-  // Legacy aliases like "claude-3-5-sonnet-latest" can return 404 on some accounts.
+  // Legacy aliases like "claude-sonnet-4-5" can return 404 on some accounts.
   if (model.endsWith("-latest")) {
     return DEFAULT_CLAUDE_MODEL;
   }

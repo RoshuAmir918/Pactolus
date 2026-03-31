@@ -97,6 +97,7 @@ export const getRunsBySnapshotOutputSchema = z.object({
       id: z.uuid(),
       name: z.string(),
       status: runStatusSchema,
+      createdByName: z.string(),
       createdAt: z.date(),
       updatedAt: z.date(),
     }),

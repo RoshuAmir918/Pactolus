@@ -37,6 +37,7 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-local": "^1.0.0",
     "pg": "^8.19.0",
+    "react-markdown": "^10.1.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

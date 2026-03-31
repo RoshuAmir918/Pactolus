@@ -2,6 +2,10 @@ import { authenticatedProcedure, router } from "@api/trpc/base";
 import {
   detectRegionsInputSchema,
   detectRegionsOutputSchema,
+  detectWorkbookRegionsInputSchema,
+  detectWorkbookRegionsOutputSchema,
+  extractScenarioAssumptionsInputSchema,
+  extractScenarioAssumptionsOutputSchema,
   getMonitoredRegionsInputSchema,
   getMonitoredRegionsOutputSchema,
   getLiveHintsInputSchema,
@@ -15,6 +19,8 @@ import {
   detectRegionsWithAi,
   type DetectRegionsWithAiResult,
 } from "./services/detectRegionsWithAi";
+import { detectWorkbookRegions } from "./services/detectWorkbookRegions";
+import { extractScenarioAssumptions } from "./services/extractScenarioAssumptions";
 import {
   getMonitoredRegions,
   type GetMonitoredRegionsResult,
@@ -27,6 +33,28 @@ import {
 } from "./services/saveMonitoredRegions";
 
 export const excelRouter = router({
+  detectWorkbookRegions: authenticatedProcedure
+    .input(detectWorkbookRegionsInputSchema)
+    .output(detectWorkbookRegionsOutputSchema)
+    .mutation(async ({ ctx, input }) =>
+      detectWorkbookRegions({
+        orgId: ctx.orgId,
+        snapshotId: input.snapshotId,
+        sheets: input.sheets,
+      }),
+    ),
+
+  extractScenarioAssumptions: authenticatedProcedure
+    .input(extractScenarioAssumptionsInputSchema)
+    .output(extractScenarioAssumptionsOutputSchema)
+    .mutation(async ({ ctx, input }) =>
+      extractScenarioAssumptions({
+        orgId: ctx.orgId,
+        snapshotId: input.snapshotId,
+        sheets: input.sheets,
+      }),
+    ),
+
   detectRegions: authenticatedProcedure
     .input(detectRegionsInputSchema)
     .output(detectRegionsOutputSchema)
