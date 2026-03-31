@@ -17,6 +17,7 @@ export type CompleteUploadInput = {
   contentType: string;
   sizeBytes: number;
   sha256?: string;
+  documentType?: "claims" | "policies" | "loss_triangles" | "workbook_tool" | "other";
 };
 
 export type CompleteUploadResult = {
@@ -115,7 +116,7 @@ function buildDocumentValues(input: CompleteUploadInput, fileObjectId: string): 
     fileObjectId,
     orgId: input.orgId,
     snapshotId: input.snapshotId,
-    documentType: "other",
+    documentType: input.documentType ?? "other",
     filename: input.fileName,
     mimeType: input.contentType,
     fileExtension: inferFileExtension(input.fileName),

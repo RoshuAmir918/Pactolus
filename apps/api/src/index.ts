@@ -21,6 +21,20 @@ const allowedOrigins = new Set([
   "https://localhost:3001",
 ]);
 
+async function ensureSessionTable(): Promise<void> {
+  await dbClient.pool.query(`
+    CREATE TABLE IF NOT EXISTS "session" (
+      "sid" varchar NOT NULL PRIMARY KEY,
+      "sess" json NOT NULL,
+      "expire" timestamp(6) NOT NULL
+    )
+  `);
+  await dbClient.pool.query(`
+    CREATE INDEX IF NOT EXISTS "IDX_session_expire"
+    ON "session" ("expire")
+  `);
+}
+
 app.use(
   cors({
     origin(origin, callback) {
@@ -74,6 +88,15 @@ app.use(
 );
 
 const port = 4000;
-app.listen(port, () => {
-  console.log(`API listening on http://localhost:${port}`);
+
+async function startServer() {
+  await ensureSessionTable();
+  app.listen(port, () => {
+    console.log(`API listening on http://localhost:${port}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error("Failed to start API server:", error);
+  process.exit(1);
 });

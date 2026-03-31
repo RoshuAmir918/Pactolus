@@ -3,8 +3,13 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import type { AuthTRPC } from "@/lib/trpc";
 
-/** Same-origin `/trpc` by default (Next rewrite). Set `NEXT_PUBLIC_API_URL` for a direct API origin. */
-const apiBase = () => process.env.NEXT_PUBLIC_API_URL ?? "";
+/**
+ * In local dev, prefer talking directly to API to avoid Next proxy instability.
+ * In prod, default to same-origin `/trpc` unless NEXT_PUBLIC_API_URL is set.
+ */
+const apiBase = () =>
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === "development" ? "http://localhost:4000" : "");
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const client = createTRPCClient<any>({

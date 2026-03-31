@@ -38,6 +38,7 @@ export async function appendRunStepIfActive(input: {
   idempotencyKey?: string;
   parentStepId?: string;
   parametersJson: unknown;
+  documentId?: string;
   runId?: string;
   branchId?: string;
 }): Promise<string | null> {
@@ -54,6 +55,7 @@ export async function appendRunStepIfActive(input: {
     idempotencyKey: input.idempotencyKey,
     parentStepId: input.parentStepId ?? input.runSession.lastStepId ?? undefined,
     parametersJson: input.parametersJson,
+    documentId: input.documentId,
   });
   return step.stepId;
 }
@@ -83,11 +85,15 @@ export function parseConfidence(value: string): number | null {
   return Math.round(parsed * 100) / 100;
 }
 
-export function toRunOptions(runs: Array<{ id: string; name: string; status: string }>): RunOption[] {
+export function toRunOptions(
+  runs: Array<{ id: string; name: string; status: string; createdByName: string; createdAt: Date }>,
+): RunOption[] {
   return runs.map((run) => ({
     id: run.id,
     name: run.name,
     status: run.status,
+    createdByName: run.createdByName,
+    createdAt: run.createdAt,
   }));
 }
 

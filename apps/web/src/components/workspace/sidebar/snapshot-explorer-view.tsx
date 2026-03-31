@@ -163,6 +163,22 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu className="space-y-1 py-2">
+            <SidebarMenuItem>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-full justify-start gap-1.5 rounded-none pl-5 text-xs font-normal"
+                onClick={handleUploadClick}
+                disabled={uploadLoading}
+              >
+                {uploadLoading ? (
+                  <Loader2 className="size-3 shrink-0 animate-spin" />
+                ) : (
+                  <Upload className="size-3 shrink-0" />
+                )}
+                Upload .xlsx
+              </Button>
+            </SidebarMenuItem>
             {snapshot.sections.map((section) => {
               const isRawData = section.id === "raw-data";
               const files: WorkspaceFile[] =
@@ -176,24 +192,6 @@ export function SnapshotExplorerView({ snapshot }: SnapshotExplorerViewProps) {
                         {section.name}
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>
-                    {isRawData && (
-                      <SidebarMenuSubItem>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-full justify-start gap-1.5 rounded-none pl-5 text-xs font-normal"
-                          onClick={handleUploadClick}
-                          disabled={uploadLoading || listLoading}
-                        >
-                          {uploadLoading ? (
-                            <Loader2 className="size-3 shrink-0 animate-spin" />
-                          ) : (
-                            <Upload className="size-3 shrink-0" />
-                          )}
-                          Upload .xlsx
-                        </Button>
-                      </SidebarMenuSubItem>
-                    )}
                     {isRawData && (uploadError || deleteError) && (
                       <SidebarMenuSubItem>
                         <p className="px-5 py-1 text-xs text-destructive">

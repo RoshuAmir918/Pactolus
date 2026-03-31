@@ -42,7 +42,7 @@ export async function getLiveHintsFromAi(
 
   const contextCandidates = await loadContextCandidates(input.orgId, input.snapshotId);
   const prompt = buildPrompt(input, contextCandidates);
-  const model = process.env.CLAUDE_MODEL ?? "claude-3-5-sonnet-latest";
+  const model = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-5";
 
   const responseJson = await callAnthropicJson({
     apiKey,

@@ -30,6 +30,8 @@ export type MonitoredRegion = {
   confidencePercent: number;
   userConfirmed: boolean;
   status?: "active" | "archived";
+  reason?: string;
+  evidence?: string[];
 };
 
 export type RunSession = {
@@ -43,6 +45,8 @@ export type RunOption = {
   id: string;
   name: string;
   status: string;
+  createdByName: string;
+  createdAt: Date;
 };
 
 export type BranchOption = {
@@ -65,4 +69,35 @@ export type SnapshotOption = {
   accountingPeriod: string | null;
 };
 
+export type SourceDocument = {
+  id: string;
+  filename: string;
+  fileExtension: string | null;
+  documentType: string;
+  fileSizeBytes: number;
+};
+
+export interface ExcelAction {
+  type: "write_range";
+  startCell: string;
+  values: unknown[][];
+  sheetName?: string;
+  description: string;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  text: string;
+  action?: ExcelAction | null;
+}
+
 export type UiPage = "auth" | "run" | "workspace";
+
+export type StepRecord = {
+  id: string;
+  stepIndex: number;
+  stepType: string;
+  parametersJson: unknown;
+  branchId: string;
+  documentId: string | null;
+};

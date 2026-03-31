@@ -22,6 +22,7 @@ export const completeUploadInputSchema = z.object({
   contentType: z.string().min(1),
   sizeBytes: z.number().int().positive(),
   sha256: z.string().min(1).optional(),
+  documentType: z.enum(["claims", "policies", "loss_triangles", "workbook_tool", "other"]).optional(),
 });
 
 export const completeUploadOutputSchema = z.object({
@@ -52,6 +53,26 @@ export const listBySnapshotOutputSchema = z.array(
     createdAt: z.date(),
   }),
 );
+
+export const getDownloadUrlByDocumentInputSchema = z.object({
+  documentId: z.uuid(),
+});
+
+export const getSourceDocumentsInputSchema = z.object({
+  snapshotId: z.uuid(),
+});
+
+export const getSourceDocumentsOutputSchema = z.object({
+  documents: z.array(
+    z.object({
+      id: z.uuid(),
+      filename: z.string(),
+      fileExtension: z.string().nullable(),
+      documentType: z.string(),
+      fileSizeBytes: z.number(),
+    }),
+  ),
+});
 
 export const deleteFileInputSchema = z.object({
   fileObjectId: z.uuid(),

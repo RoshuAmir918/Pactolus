@@ -8,6 +8,7 @@ import { operationsRouter } from "@api/modules/operations/router";
 import { contextRouter } from "@api/modules/context/router";
 import { excelRouter } from "@api/modules/excel/router";
 import { storageRouter } from "@api/modules/storage/router";
+import { chatRouter } from "@api/modules/chat/router";
 
 export const appRouter = router({
   auth: authRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   context: contextRouter,
   excel: excelRouter,
   storage: storageRouter,
+  chat: chatRouter,
 });
 
 export type AppRouter = typeof appRouter;

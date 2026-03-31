@@ -4,6 +4,7 @@ import {
   completeUploadOutputSchema,
   deleteFileInputSchema,
   deleteFileOutputSchema,
+  getDownloadUrlByDocumentInputSchema,
   getDownloadUrlInputSchema,
   getDownloadUrlOutputSchema,
   getUploadUrlInputSchema,
@@ -13,9 +14,12 @@ import {
 } from "./schemas";
 import { completeUpload, type CompleteUploadResult } from "./services/completeUpload";
 import { getDownloadUrl, type GetDownloadUrlResult } from "./services/getDownloadUrl";
+import { getDownloadUrlByDocument } from "./services/getDownloadUrlByDocument";
 import { getUploadUrl, type GetUploadUrlResult } from "./services/getUploadUrl";
 import { listBySnapshot, type ListBySnapshotResult } from "./services/listBySnapshot";
 import { deleteFileObject, type DeleteFileObjectResult } from "./services/deleteFileObject";
+import { getSourceDocuments, type GetSourceDocumentsResult } from "./services/getSourceDocuments";
+import { getSourceDocumentsInputSchema, getSourceDocumentsOutputSchema } from "./schemas";
 import { assertSnapshotAccess } from "@api/modules/guards/services/assertSnapshotAccess";
 
 export const storageRouter = router({
@@ -50,6 +54,7 @@ export const storageRouter = router({
         contentType: input.contentType,
         sizeBytes: input.sizeBytes,
         sha256: input.sha256,
+        documentType: input.documentType,
       }),
     ),
 
@@ -76,6 +81,26 @@ export const storageRouter = router({
         snapshotId: input.snapshotId,
       });
     }),
+
+  getDownloadUrlByDocument: authenticatedProcedure
+    .input(getDownloadUrlByDocumentInputSchema)
+    .output(getDownloadUrlOutputSchema)
+    .query(async ({ ctx, input }): Promise<GetDownloadUrlResult> =>
+      getDownloadUrlByDocument({
+        orgId: ctx.orgId,
+        documentId: input.documentId,
+      }),
+    ),
+
+  getSourceDocuments: authenticatedProcedure
+    .input(getSourceDocumentsInputSchema)
+    .output(getSourceDocumentsOutputSchema)
+    .query(async ({ ctx, input }): Promise<GetSourceDocumentsResult> =>
+      getSourceDocuments({
+        orgId: ctx.orgId,
+        snapshotId: input.snapshotId,
+      }),
+    ),
 
   deleteFile: authenticatedProcedure
     .input(deleteFileInputSchema)
