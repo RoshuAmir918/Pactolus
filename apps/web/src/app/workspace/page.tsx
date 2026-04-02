@@ -3,12 +3,5 @@
 import { WorkspaceLayout } from "@/components/workspace";
 
 export default function WorkspacePage() {
-  return (
-    <WorkspaceLayout title="Workspace">
-      <p className="text-sm text-muted-foreground">
-        This is your main workspace area. Add cards, tables, and other components
-        here.
-      </p>
-    </WorkspaceLayout>
-  );
+  return <WorkspaceLayout />;
 }

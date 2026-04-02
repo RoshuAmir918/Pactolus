@@ -36,8 +36,7 @@ export type MonitoredRegion = {
 
 export type RunSession = {
   runId: string | null;
-  branchId: string | null;
-  lastStepId: string | null;
+  currentOperationId: string | null;  // the last saved operation (determines active position in tree)
   startedAtIso: string | null;
 };
 
@@ -47,12 +46,6 @@ export type RunOption = {
   status: string;
   createdByName: string;
   createdAt: Date;
-};
-
-export type BranchOption = {
-  id: string;
-  name: string;
-  status: string;
 };
 
 export type ClientOption = {
@@ -93,11 +86,13 @@ export interface ChatMessage {
 
 export type UiPage = "auth" | "run" | "workspace";
 
-export type StepRecord = {
+export type OperationRecord = {
   id: string;
-  stepIndex: number;
-  stepType: string;
+  operationIndex: number;
+  operationType: string;
   parametersJson: unknown;
-  branchId: string;
+  parentOperationId: string | null;
+  supersedesOperationId: string | null;
   documentId: string | null;
+  createdAt: Date | null;
 };

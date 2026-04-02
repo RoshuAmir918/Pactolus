@@ -130,10 +130,67 @@ export type AuthTRPC = {
         }>
       >;
     };
+    getDownloadUrl: {
+      query: (input: { fileObjectId: string }) => Promise<{
+        downloadUrl: string;
+        expiresAt: Date;
+      }>;
+    };
+    getSourceDocuments: {
+      query: (input: { snapshotId: string }) => Promise<{
+        documents: Array<{
+          id: string;
+          fileObjectId: string;
+          filename: string;
+          fileExtension: string | null;
+          documentType: string;
+          fileSizeBytes: number;
+        }>;
+      }>;
+    };
     deleteFile: {
       mutate: (input: { fileObjectId: string }) => Promise<{
         fileObjectId: string;
         status: string;
+      }>;
+    };
+  };
+  operations: {
+    getRunsBySnapshot: {
+      query: (input: { snapshotId: string; limit?: number }) => Promise<{
+        runs: Array<{
+          id: string;
+          name: string;
+          status: "running" | "completed" | "failed";
+          createdByName: string;
+          createdAt: Date;
+          updatedAt: Date;
+        }>;
+      }>;
+    };
+    getRunOperations: {
+      query: (input: { runId: string }) => Promise<{
+        operations: Array<{
+          id: string;
+          operationIndex: number;
+          operationType: string;
+          parametersJson: unknown;
+          parentOperationId: string | null;
+          supersedesOperationId: string | null;
+          documentId: string | null;
+          createdAt: Date;
+        }>;
+      }>;
+    };
+    getOperationCaptures: {
+      query: (input: { runId: string; operationId: string }) => Promise<{
+        captures: Array<{
+          id: string;
+          captureType: string;
+          payloadJson: unknown;
+          summaryText: string | null;
+          createdAt: Date;
+        }>;
       }>;
     };
   };

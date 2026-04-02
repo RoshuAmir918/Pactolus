@@ -5,8 +5,7 @@ import { RunSetupPage } from "@/pages-react/RunSetupPage";
 import { WorkspacePage } from "@/pages-react/workspace";
 import { getApiClient, normalizeApiUrl, testApiConnection } from "@/lib/api/client";
 import {
-  appendRunStepIfActive,
-  toBranchOptions,
+  appendOperationIfActive,
   toRunOptions,
 } from "@/features/operations/actions";
 import {
@@ -14,7 +13,6 @@ import {
   authenticatedAtom,
   authEmailAtom,
   authSummaryAtom,
-  availableBranchesAtom,
   availableClientsAtom,
   availableRunsAtom,
   availableSnapshotsAtom,
@@ -29,15 +27,15 @@ import {
   runModeAtom,
   runSessionAtom,
   runSummaryAtom,
-  selectedBranchIdAtom,
   selectedClientIdAtom,
   selectedRunIdAtom,
   snapshotIdAtom,
   statusAtom,
 } from "@/features/session/atoms";
-import { getWorkbookBlob, captureAllSheetSlices, selectRange, WORKBOOK_CONTENT_TYPE } from "@/lib/office/worksheet";
+import { getWorkbookBlob, captureAllSheetSlices, readOutputRegionValues, selectRange, WORKBOOK_CONTENT_TYPE } from "@/lib/office/worksheet";
 import { getCachedDownloadUrl, setCachedDownloadUrl } from "@/lib/api/downloadCache";
 import type { RunSession } from "@/features/types";
+import type { SaveContext } from "@/pages-react/workspace/types";
 
 export default function App() {
   // ── persisted atoms ──────────────────────────────────────────────────────────
@@ -46,7 +44,6 @@ export default function App() {
   const [snapshotId, setSnapshotId] = useAtom(snapshotIdAtom);
   const [runMode, setRunMode] = useAtom(runModeAtom);
   const [selectedRunId, setSelectedRunId] = useAtom(selectedRunIdAtom);
-  const [selectedBranchId, setSelectedBranchId] = useAtom(selectedBranchIdAtom);
   const [runSession, setRunSession] = useAtom(runSessionAtom);
 
   // ── ephemeral atoms ──────────────────────────────────────────────────────────
@@ -59,7 +56,6 @@ export default function App() {
   const [availableClients, setAvailableClients] = useAtom(availableClientsAtom);
   const [, setAllSnapshots] = useAtom(allSnapshotsAtom);
   const [availableRuns, setAvailableRuns] = useAtom(availableRunsAtom);
-  const [availableBranches, setAvailableBranches] = useAtom(availableBranchesAtom);
   const [committedOperations, setCommittedOperations] = useAtom(committedOperationsAtom);
   const [sourceDocuments, setSourceDocuments] = useAtom(sourceDocumentsAtom);
   const [detectedRegions, setDetectedRegions] = useAtom(detectedRegionsAtom);
@@ -70,7 +66,7 @@ export default function App() {
   const authSummary = useAtomValue(authSummaryAtom);
   const runSummary = useAtomValue(runSummaryAtom);
 
-  // ── local ui-only state (no persistence needed) ───────────────────────────────
+  // ── local ui-only state ───────────────────────────────────────────────────────
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isDetectingRegions, setIsDetectingRegions] = useState(false);
@@ -194,19 +190,18 @@ export default function App() {
       setAuthenticated(true);
       setAuthEmail(email.trim());
       await loadClientAndSnapshotOptions();
-      // restore persisted snapshot/run/branch selection — silently clear stale IDs (e.g. after DB wipe)
+      // restore persisted run selection — silently clear stale IDs (e.g. after DB wipe)
       if (snapshotId) {
         try {
           await fetchRuns(snapshotId);
           if (selectedRunId) {
-            await fetchBranches(selectedRunId);
+            await onLoadCommittedOperations(selectedRunId);
           }
         } catch {
           setSelectedRunId("");
-          setSelectedBranchId("");
           setAvailableRuns([]);
-          setAvailableBranches([]);
-          mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
+          setCommittedOperations([]);
+          setRunSession({ runId: null, currentOperationId: null, startedAtIso: null });
         }
       }
       setCurrentPage("run");
@@ -223,15 +218,13 @@ export default function App() {
   async function onLogout() {
     setAuthenticated(false);
     setAuthEmail(null);
-    setRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
+    setRunSession({ runId: null, currentOperationId: null, startedAtIso: null });
     setAvailableRuns([]);
-    setAvailableBranches([]);
     setAvailableClients([]);
     setAllSnapshots([]);
     setSelectedClientId("");
     setSnapshotId("");
     setSelectedRunId("");
-    setSelectedBranchId("");
     setCurrentPage("auth");
     setOk("Logged out in add-in session.");
   }
@@ -246,20 +239,6 @@ export default function App() {
     });
     setAvailableRuns(toRunOptions(result.runs));
     return result.runs;
-  }
-
-  async function fetchBranches(runId: string) {
-    const client = getApiClient(normalizedApiUrl);
-    const result = await client.operations.getRunBranches.query({ runId });
-    const options = toBranchOptions(result.branches);
-    setAvailableBranches(options);
-    // auto-select the first active branch — no manual branch picking needed
-    const auto = options.find((b) => b.status === "active") ?? options[0];
-    if (auto) {
-      setSelectedBranchId(auto.id);
-      mergeRunSession({ runId, branchId: auto.id, lastStepId: null, startedAtIso: null });
-    }
-    return result.branches;
   }
 
   async function onLoadRuns(snapshotIdOverride?: string) {
@@ -278,11 +257,10 @@ export default function App() {
     }
     try {
       const runs = await fetchRuns(resolvedSnapshotId);
-      setAvailableBranches([]);
       setSelectedRunId("");
-      setSelectedBranchId("");
-      mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
-      setOk(`Loaded ${runs.length} run(s). Select a run to load branches.`);
+      setCommittedOperations([]);
+      setRunSession({ runId: null, currentOperationId: null, startedAtIso: null });
+      setOk(`Loaded ${runs.length} run(s). Select a run to continue.`);
     } catch (error) {
       setError(`Load runs failed: ${formatError(error)}`);
     }
@@ -292,74 +270,32 @@ export default function App() {
     setSelectedClientId(clientId);
     setSnapshotId("");
     setAvailableRuns([]);
-    setAvailableBranches([]);
     setSelectedRunId("");
-    setSelectedBranchId("");
-    mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
+    setCommittedOperations([]);
+    setRunSession({ runId: null, currentOperationId: null, startedAtIso: null });
   }
 
   async function onSelectRun(runId: string) {
     setSelectedRunId(runId);
     if (!runId) {
-      setAvailableBranches([]);
-      setSelectedBranchId("");
-      mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
+      setCommittedOperations([]);
+      setRunSession({ runId: null, currentOperationId: null, startedAtIso: null });
       return;
     }
+    setRunMode("select");
+    // Load existing operations so user can see the tree before entering workspace
     try {
-      await fetchBranches(runId);
-    } catch (error) {
-      setError(`Load branches failed: ${formatError(error)}`);
-    }
-  }
-
-  async function onSelectBranchFromWorkspace(branchId: string) {
-    setSelectedBranchId(branchId);
-    mergeRunSession({
-      runId: runSession.runId,
-      branchId,
-      lastStepId: null,
-      startedAtIso: new Date().toISOString(),
-    });
-    setOk("Active branch changed.");
-    await onLoadCommittedOperations(runSession.runId ?? undefined, branchId);
-  }
-
-  async function onDeleteBranch(branchId: string) {
-    if (!runSession.runId) {
-      setError("No active run.");
-      return;
-    }
-    try {
+      await onLoadCommittedOperations(runId);
+      // Set the run in session — currentOperationId will be resolved from the loaded operations
       const client = getApiClient(normalizedApiUrl);
-      await client.operations.archiveBranch.mutate({
-        runId: runSession.runId,
-        branchId,
-      });
-      const branchesResult = await client.operations.getRunBranches.query({
-        runId: runSession.runId,
-      });
-      const refreshed = toBranchOptions(branchesResult.branches);
-      setAvailableBranches(refreshed);
-
-      if (runSession.branchId === branchId) {
-        const fallback =
-          refreshed.find((branch) => branch.status === "active") ?? refreshed[0] ?? null;
-        setSelectedBranchId(fallback?.id ?? "");
-        mergeRunSession({
-          branchId: fallback?.id ?? null,
-          lastStepId: null,
-        });
-      }
-      setOk("Branch deleted.");
+      const result = await client.operations.getRunOperations.query({ runId });
+      const supersededIds = new Set(result.operations.map((o: { supersedesOperationId: string | null }) => o.supersedesOperationId).filter(Boolean));
+      const tip = result.operations
+        .filter((o: { operationType: string; id: string }) => o.operationType === "scenario_snapshot" && !supersededIds.has(o.id))
+        .at(-1);
+      mergeRunSession({ runId, currentOperationId: tip?.id ?? null, startedAtIso: null });
     } catch (error) {
-      if (isMissingProcedureError(error, "operations.archiveBranch")) {
-        setError(
-          'Delete branch failed because the API is on an older build. Restart API with "npm run api:dev" from repo root, then retry.',
-        );
-        return;
-      }
-      setError(`Delete branch failed: ${formatError(error)}`);
+      setError(`Load run failed: ${formatError(error)}`);
     }
   }
 
@@ -378,27 +314,21 @@ export default function App() {
           name: "Analysis",
         });
         setSelectedRunId(runResult.runId);
-        setSelectedBranchId(runResult.mainBranchId);
-        mergeRunSession({
-          runId: runResult.runId,
-          branchId: runResult.mainBranchId,
-          lastStepId: null,
-          startedAtIso: new Date().toISOString(),
-        });
-        await onLoadCommittedOperations(runResult.runId, runResult.mainBranchId);
+        setCommittedOperations([]);
+        setRunSession({ runId: runResult.runId, currentOperationId: null, startedAtIso: new Date().toISOString() });
         setOk("Run created. Continue in workspace.");
       } catch (error) {
         setError(`Create run failed: ${formatError(error)}`);
         return;
       }
-    } else if (!runSession.runId || !runSession.branchId) {
-      setError("Select an existing run and branch before continuing.");
+    } else if (!runSession.runId) {
+      setError("Select an existing run before continuing.");
       return;
     } else {
-      await onLoadCommittedOperations(runSession.runId, runSession.branchId);
+      await onLoadCommittedOperations(runSession.runId);
     }
 
-    // Load source documents for the workspace doc strip
+    // Load source documents
     try {
       const docs = await client.storage.getSourceDocuments.query({ snapshotId: snapshotId.trim() });
       setSourceDocuments(docs.documents);
@@ -407,100 +337,30 @@ export default function App() {
     }
 
     setCurrentPage("workspace");
-    // Fire-and-forget — don't block navigation
     runWorkbookDetection();
   }
 
-  // ── branch actions ────────────────────────────────────────────────────────────
+  // ── save scenario ─────────────────────────────────────────────────────────────
 
-  async function onNewScenario(name: string) {
-    if (!runSession.runId || !runSession.branchId) {
-      setError("Select a run and branch before creating a scenario.");
-      return;
-    }
-    const client = getApiClient(normalizedApiUrl);
-
-    // 1. Auto-snapshot current workbook state onto the current branch
-    let snapshotStepId: string | null = runSession.lastStepId;
-    try {
-      const fileName = `scenario-snapshot-${Date.now()}.xlsx`;
-      const { blob, sizeBytes } = await getWorkbookBlob();
-      const upload = await client.storage.getUploadUrl.mutate({
-        snapshotId,
-        fileName,
-        contentType: WORKBOOK_CONTENT_TYPE,
-        sizeBytes,
-      });
-      await fetch(upload.uploadUrl, {
-        method: "PUT",
-        body: blob,
-        headers: { "Content-Type": WORKBOOK_CONTENT_TYPE },
-      });
-      const completed = await client.storage.completeUpload.mutate({
-        snapshotId,
-        bucket: upload.bucket,
-        objectKey: upload.objectKey,
-        fileName,
-        contentType: WORKBOOK_CONTENT_TYPE,
-        sizeBytes,
-        documentType: "workbook_tool",
-      });
-      const stepId = await appendRunStepIfActive({
-        client,
-        runSession,
-        stepType: "scenario_snapshot",
-        documentId: completed.documentId,
-        idempotencyKey: `scenario-snapshot:${runSession.branchId}:${Date.now()}`,
-        parametersJson: { scenarioName: name, snapshotAt: new Date().toISOString() },
-      });
-      if (stepId) snapshotStepId = stepId;
-    } catch {
-      // proceed without snapshot — fork still happens
-    }
-
-    // 2. Fork from that snapshot point into a named scenario branch
-    try {
-      const created = await client.operations.createBranch.mutate({
-        runId: runSession.runId,
-        name,
-        parentBranchId: runSession.branchId,
-        forkedFromStepId: snapshotStepId ?? undefined,
-      });
-      const forkStepId = await appendRunStepIfActive({
-        client,
-        runSession: { ...runSession, branchId: created.branchId },
-        runId: runSession.runId,
-        branchId: created.branchId,
-        stepType: "branch_forked",
-        idempotencyKey: `branch-forked:${created.branchId}`,
-        parametersJson: {
-          parentBranchId: runSession.branchId,
-          newBranchId: created.branchId,
-          branchName: name,
-          forkedFromStepId: snapshotStepId ?? null,
-        },
-      });
-      const branchesResult = await client.operations.getRunBranches.query({
-        runId: runSession.runId,
-      });
-      setAvailableBranches(toBranchOptions(branchesResult.branches));
-      setSelectedBranchId(created.branchId);
-      mergeRunSession({
-        branchId: created.branchId,
-        lastStepId: forkStepId ?? null,
-        startedAtIso: new Date().toISOString(),
-      });
-      await onLoadCommittedOperations(runSession.runId, created.branchId);
-      setOk(`Created scenario "${name}".`);
-    } catch (error) {
-      setError(`Create scenario failed: ${formatError(error)}`);
-    }
-  }
-
-  async function onSaveScenario(narrative: string) {
-    if (!runSession.runId || !runSession.branchId) return;
+  async function onSaveScenario(narrative: string, context: SaveContext) {
+    if (!runSession.runId) return;
     const client = getApiClient(normalizedApiUrl);
     const savedAt = new Date().toISOString();
+
+    // Resolve parentOperationId and supersedesOperationId from SaveContext
+    let parentOperationId: string | undefined;
+    let supersedesOperationId: string | undefined;
+
+    if (context.kind === "seq") {
+      parentOperationId = context.parentStepId ?? undefined;
+    } else if (context.kind === "par") {
+      parentOperationId = context.parentStepId ?? undefined;
+    } else if (context.kind === "update") {
+      // supersede the target operation; keep same parent
+      const target = committedOperations.find((o) => o.id === context.stepId);
+      parentOperationId = target?.parentOperationId ?? undefined;
+      supersedesOperationId = context.stepId;
+    }
 
     // 1. Upload workbook snapshot
     let documentId: string | undefined;
@@ -532,45 +392,55 @@ export default function App() {
       // proceed without snapshot
     }
 
-    // 2. Append snapshot step
+    // 2. Append the operation
+    let newOperationId: string | null = null;
     try {
-      const stepId = await appendRunStepIfActive({
+      newOperationId = await appendOperationIfActive({
         client,
         runSession,
-        stepType: "scenario_snapshot",
+        operationType: "scenario_snapshot",
         documentId,
-        idempotencyKey: `scenario-save:${runSession.branchId}:${Date.now()}`,
-        parametersJson: { savedAt, narrative: narrative.trim() || null },
+        parentOperationId,
+        supersedesOperationId,
+        parametersJson: { savedAt, narrative: narrative.trim() || null, label: narrative.trim().slice(0, 60) || "Saved" },
       });
-      if (stepId) mergeRunSession({ lastStepId: stepId });
-    } catch {
-      // snapshot step optional
-    }
-
-    // 3. Extract assumptions in background and append as a step
-    try {
-      const sheets = await captureAllSheetSlices();
-      if (sheets.length > 0) {
-        const result = await client.excel.extractScenarioAssumptions.mutate({
-          snapshotId: snapshotId.trim(),
-          sheets,
-        });
-        if (result.assumptions.length > 0) {
-          const stepId = await appendRunStepIfActive({
-            client,
-            runSession,
-            stepType: "assumptions_extracted",
-            idempotencyKey: `assumptions:${runSession.branchId}:${Date.now()}`,
-            parametersJson: {
-              assumptions: result.assumptions,
-              extractedAt: new Date().toISOString(),
-            },
-          });
-          if (stepId) mergeRunSession({ lastStepId: stepId });
-        }
+      if (newOperationId) {
+        mergeRunSession({ currentOperationId: newOperationId });
       }
     } catch {
-      // assumption extraction is best-effort
+      // snapshot optional
+    }
+
+    // 3. Write captures
+    if (newOperationId && runSession.runId) {
+      const runIdForCapture = runSession.runId;
+      if (narrative.trim()) {
+        try {
+          await client.operations.saveOperationCapture.mutate({
+            runId: runIdForCapture,
+            runOperationId: newOperationId,
+            captureType: "narrative",
+            payloadJson: { text: narrative.trim() },
+            summaryText: narrative.trim().slice(0, 500),
+          });
+        } catch {
+          // best-effort
+        }
+      }
+      try {
+        const regionValues = await readOutputRegionValues(detectedRegions);
+        if (regionValues.length > 0) {
+          await client.operations.saveOperationCapture.mutate({
+            runId: runIdForCapture,
+            runOperationId: newOperationId,
+            captureType: "output_values",
+            payloadJson: { regions: regionValues },
+            summaryText: `Output values captured for ${regionValues.length} region(s)`,
+          });
+        }
+      } catch {
+        // best-effort
+      }
     }
 
     await onLoadCommittedOperations();
@@ -579,29 +449,32 @@ export default function App() {
 
   // ── committed operations ──────────────────────────────────────────────────────
 
-  async function onLoadCommittedOperations(runIdOverride?: string, branchIdOverride?: string) {
+  async function onLoadCommittedOperations(runIdOverride?: string) {
     const runId = runIdOverride ?? runSession.runId;
-    const branchId = branchIdOverride ?? runSession.branchId;
-    if (!runId || !branchId) return;
+    if (!runId) return;
     try {
       const client = getApiClient(normalizedApiUrl);
-      const result = await client.operations.getBranchEffectiveHistory.query({ runId, branchId });
+      const result = await client.operations.getRunOperations.query({ runId });
       setCommittedOperations(
-        result.steps.map(
-          (s: {
+        result.operations.map(
+          (o: {
             id: string;
-            stepIndex: number;
-            stepType: string;
+            operationIndex: number;
+            operationType: string;
             parametersJson: unknown;
-            branchId: string;
+            parentOperationId: string | null;
+            supersedesOperationId: string | null;
             documentId: string | null;
+            createdAt?: Date | string | null;
           }) => ({
-            id: s.id,
-            stepIndex: s.stepIndex,
-            stepType: s.stepType,
-            parametersJson: s.parametersJson,
-            branchId: s.branchId,
-            documentId: s.documentId,
+            id: o.id,
+            operationIndex: o.operationIndex,
+            operationType: o.operationType,
+            parametersJson: o.parametersJson,
+            parentOperationId: o.parentOperationId,
+            supersedesOperationId: o.supersedesOperationId,
+            documentId: o.documentId,
+            createdAt: o.createdAt ? new Date(o.createdAt) : null,
           }),
         ),
       );
@@ -645,7 +518,6 @@ export default function App() {
       if (sheets.length === 0) return;
       const client = getApiClient(normalizedApiUrl);
       const result = await client.excel.detectWorkbookRegions.mutate({ snapshotId: snapshotId.trim(), sheets });
-      console.log("[detect] result:", JSON.stringify(result, null, 2));
       type RegionItem = { address: string; reason: string; confidencePercent: number };
       type SheetResult = { sheetName: string; inputRegions: RegionItem[]; outputRegions: RegionItem[] };
       const allRegions = result.sheets.flatMap((s: SheetResult) => [
@@ -674,7 +546,7 @@ export default function App() {
         ]);
       }
     } catch {
-      // silent — best-effort
+      // silent
     } finally {
       setIsDetectingRegions(false);
     }
@@ -686,7 +558,6 @@ export default function App() {
     text: string,
     context: {
       runId: string;
-      branchId: string | null;
       selectedRange: string | null;
       history: Array<{ role: "user" | "assistant"; text: string }>;
     },
@@ -695,7 +566,7 @@ export default function App() {
     const result = await client.chat.sendMessage.mutate({
       snapshotId: snapshotId.trim(),
       runId: context.runId || null,
-      branchId: context.branchId,
+      branchId: null,
       messages: [
         ...context.history,
         { role: "user", text },
@@ -720,9 +591,7 @@ export default function App() {
       throw new Error("Only .xlsx and .csv files are supported.");
     }
 
-    const contentType = isCsv
-      ? "text/csv"
-      : WORKBOOK_CONTENT_TYPE;
+    const contentType = isCsv ? "text/csv" : WORKBOOK_CONTENT_TYPE;
     const client = getApiClient(normalizedApiUrl);
 
     setOk(`Uploading "${file.name}"...`);
@@ -795,7 +664,7 @@ export default function App() {
         availableSnapshots={availableSnapshots}
         availableRuns={availableRuns}
         selectedRunId={selectedRunId}
-        selectedBranchName={availableBranches.find((b) => b.id === selectedBranchId)?.name ?? null}
+        selectedBranchName={null}
         status={status}
         canContinue={canContinueToWorkspace}
         onReloadContext={loadClientAndSnapshotOptions}
@@ -803,17 +672,16 @@ export default function App() {
         onSnapshotIdChange={(value) => {
           setSnapshotId(value);
           setAvailableRuns([]);
-          setAvailableBranches([]);
           setSelectedRunId("");
-          setSelectedBranchId("");
-          mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
+          setCommittedOperations([]);
+          setRunSession({ runId: null, currentOperationId: null, startedAtIso: null });
         }}
         onRunModeChange={(value) => {
           setRunMode(value);
           if (value === "create") {
             setSelectedRunId("");
-            setSelectedBranchId("");
-            mergeRunSession({ runId: null, branchId: null, lastStepId: null, startedAtIso: null });
+            setCommittedOperations([]);
+            setRunSession({ runId: null, currentOperationId: null, startedAtIso: null });
           }
         }}
         onLoadRuns={onLoadRuns}
@@ -826,14 +694,9 @@ export default function App() {
   return (
     <WorkspacePage
       runSession={runSession}
-      availableBranches={availableBranches}
-      committedOperations={committedOperations}
+      operations={committedOperations}
       status={status}
-      canFork={Boolean(runSession.runId && runSession.branchId)}
       onBackToRun={() => setCurrentPage("run")}
-      onSelectBranch={onSelectBranchFromWorkspace}
-      onDeleteBranch={onDeleteBranch}
-      onNewScenario={onNewScenario}
       onSaveScenario={onSaveScenario}
       sourceDocuments={sourceDocuments}
       detectedRegions={detectedRegions}
@@ -858,13 +721,4 @@ function formatError(error: unknown): string {
     return error.message;
   }
   return String(error);
-}
-
-function isMissingProcedureError(error: unknown, path: string): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  return (
-    error.message.includes("No procedure found on path") && error.message.includes(path)
-  );
 }

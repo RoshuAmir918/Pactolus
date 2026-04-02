@@ -1,106 +1,61 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { runBranches, runOperationArtifacts, runOperations, runs, snapshots } from "../index";
+import { runOperationCaptures, runOperations, runs, snapshots } from "../index";
 
 type DbLike = NodePgDatabase<Record<string, never>>;
 
-type AppendRunStepInput = {
+type AppendRunOperationInput = {
   runId: string;
-  branchId?: string;
-  documentId?: string;
-  stepType: typeof runOperations.$inferInsert.stepType;
+  documentId?: string | null;
+  operationType: typeof runOperations.$inferInsert.operationType;
   actorType: typeof runOperations.$inferInsert.actorType;
   actorId?: string | null;
   idempotencyKey?: string | null;
   parametersJson: unknown;
-  parentStepId?: string | null;
-  supersedesStepId?: string | null;
+  parentOperationId?: string | null;
+  supersedesOperationId?: string | null;
 };
 
-export async function appendRunStep(
+export async function appendRunOperation(
   db: DbLike,
-  input: AppendRunStepInput,
+  input: AppendRunOperationInput,
 ): Promise<typeof runOperations.$inferSelect> {
   return db.transaction(async (tx) => {
-    let branchId = input.branchId;
-    if (!branchId) {
-      const [existingMainBranch] = await tx
-        .select({ id: runBranches.id })
-        .from(runBranches)
-        .where(
-          and(
-            eq(runBranches.runId, input.runId),
-            eq(runBranches.name, "main"),
-            eq(runBranches.parentBranchId, null),
-          ),
-        )
-        .orderBy(desc(runBranches.createdAt))
-        .limit(1);
-
-      if (existingMainBranch) {
-        branchId = existingMainBranch.id;
-      } else {
-        const [run] = await tx
-          .select({ createdByUserId: runs.createdByUserId })
-          .from(runs)
-          .where(eq(runs.id, input.runId))
-          .limit(1);
-
-        if (!run?.createdByUserId) {
-          throw new Error("Run not found while resolving default main branch.");
-        }
-
-        const [createdMainBranch] = await tx
-          .insert(runBranches)
-          .values({
-            runId: input.runId,
-            name: "main",
-            createdByUserId: run.createdByUserId,
-          })
-          .returning({ id: runBranches.id });
-
-        branchId = createdMainBranch.id;
-      }
-    }
-
     if (input.idempotencyKey) {
       const [existing] = await tx
         .select()
         .from(runOperations)
         .where(
           and(
-            eq(runOperations.branchId, branchId),
+            eq(runOperations.runId, input.runId),
             eq(runOperations.idempotencyKey, input.idempotencyKey),
           ),
         )
         .limit(1);
 
-      if (existing) {
-        return existing;
-      }
+      if (existing) return existing;
     }
 
-    const [nextStep] = await tx
+    const [next] = await tx
       .select({
-        stepIndex: sql<number>`coalesce(max(${runOperations.stepIndex}), 0) + 1`,
+        operationIndex: sql<number>`coalesce(max(${runOperations.operationIndex}), 0) + 1`,
       })
       .from(runOperations)
-      .where(eq(runOperations.branchId, branchId));
+      .where(eq(runOperations.runId, input.runId));
 
     const [created] = await tx
       .insert(runOperations)
       .values({
         runId: input.runId,
-        branchId,
-        documentId: input.documentId,
-        stepIndex: nextStep?.stepIndex ?? 1,
-        stepType: input.stepType,
+        documentId: input.documentId ?? null,
+        operationIndex: next?.operationIndex ?? 1,
+        operationType: input.operationType,
         actorType: input.actorType,
         actorId: input.actorId ?? null,
         idempotencyKey: input.idempotencyKey ?? null,
         parametersJson: input.parametersJson,
-        parentStepId: input.parentStepId ?? null,
-        supersedesStepId: input.supersedesStepId ?? null,
+        parentOperationId: input.parentOperationId ?? null,
+        supersedesOperationId: input.supersedesOperationId ?? null,
       })
       .returning();
 
@@ -108,28 +63,24 @@ export async function appendRunStep(
   });
 }
 
-type InsertRunStepArtifactInput = {
-  runStepId: string;
-  artifactType: typeof runOperationArtifacts.$inferInsert.artifactType;
-  dataJson: unknown;
+type InsertRunOperationCaptureInput = {
+  runOperationId: string;
+  captureType: string;
+  payloadJson: unknown;
+  summaryText?: string | null;
 };
 
-export async function insertRunStepArtifact(
+export async function insertRunOperationCapture(
   db: DbLike,
-  input: InsertRunStepArtifactInput,
-): Promise<typeof runOperationArtifacts.$inferSelect> {
+  input: InsertRunOperationCaptureInput,
+): Promise<typeof runOperationCaptures.$inferSelect> {
   const [created] = await db
-    .insert(runOperationArtifacts)
+    .insert(runOperationCaptures)
     .values({
-      runStepId: input.runStepId,
-      artifactType: input.artifactType,
-      dataJson: input.dataJson,
-    })
-    .onConflictDoUpdate({
-      target: [runOperationArtifacts.runStepId, runOperationArtifacts.artifactType],
-      set: {
-        dataJson: input.dataJson,
-      },
+      runOperationId: input.runOperationId,
+      captureType: input.captureType,
+      payloadJson: input.payloadJson,
+      summaryText: input.summaryText ?? null,
     })
     .returning();
 
@@ -153,9 +104,7 @@ export async function ensureRunForSnapshot(
     .orderBy(desc(runs.createdAt))
     .limit(1);
 
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
 
   const [snapshot] = await db
     .select({ label: snapshots.label })
@@ -170,44 +119,6 @@ export async function ensureRunForSnapshot(
       snapshotId: input.snapshotId,
       name: snapshot?.label ? `${snapshot.label} Run` : "Initial Run",
       status: "running",
-      createdByUserId: input.createdByUserId,
-    })
-    .returning();
-
-  return created;
-}
-
-type EnsureMainBranchForRunInput = {
-  runId: string;
-  createdByUserId: string;
-};
-
-export async function ensureMainBranchForRun(
-  db: DbLike,
-  input: EnsureMainBranchForRunInput,
-): Promise<typeof runBranches.$inferSelect> {
-  const [existing] = await db
-    .select()
-    .from(runBranches)
-    .where(
-      and(
-        eq(runBranches.runId, input.runId),
-        eq(runBranches.name, "main"),
-        eq(runBranches.parentBranchId, null),
-      ),
-    )
-    .orderBy(desc(runBranches.createdAt))
-    .limit(1);
-
-  if (existing) {
-    return existing;
-  }
-
-  const [created] = await db
-    .insert(runBranches)
-    .values({
-      runId: input.runId,
-      name: "main",
       createdByUserId: input.createdByUserId,
     })
     .returning();

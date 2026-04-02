@@ -1,143 +1,93 @@
 import { authenticatedProcedure, router } from "@api/trpc/base";
 import {
-  archiveBranchInputSchema,
-  archiveBranchOutputSchema,
-  appendStepInputSchema,
-  appendStepOutputSchema,
-  completeBranchInputSchema,
-  completeBranchOutputSchema,
-  createBranchInputSchema,
-  createBranchOutputSchema,
+  appendOperationInputSchema,
+  appendOperationOutputSchema,
   createRunInputSchema,
   createRunOutputSchema,
-  getBranchEffectiveHistoryInputSchema,
-  getBranchEffectiveHistoryOutputSchema,
+  getOperationAncestorsInputSchema,
+  getOperationAncestorsOutputSchema,
+  getOperationCapturesInputSchema,
+  getOperationCapturesOutputSchema,
+  getRunOperationsInputSchema,
+  getRunOperationsOutputSchema,
   getRunsBySnapshotInputSchema,
   getRunsBySnapshotOutputSchema,
-  getRunBranchesInputSchema,
-  getRunBranchesOutputSchema,
+  saveOperationCaptureInputSchema,
+  saveOperationCaptureOutputSchema,
 } from "./schemas";
-import {
-  archiveBranch,
-  type ArchiveBranchResult,
-} from "./services/archiveBranch";
-import { appendStep, type AppendStepResult } from "./services/appendStep";
-import {
-  completeBranch,
-  type CompleteBranchResult,
-} from "./services/completeBranch";
-import { createBranch, type CreateBranchResult } from "./services/createBranch";
+import { appendOperation, type AppendOperationResult } from "./services/appendOperation";
 import { createRun, type CreateRunResult } from "./services/createRun";
-import {
-  getBranchEffectiveHistory,
-  type GetBranchEffectiveHistoryResult,
-} from "./services/getBranchEffectiveHistory";
-import {
-  getRunsBySnapshot,
-  type GetRunsBySnapshotResult,
-} from "./services/getRunsBySnapshot";
-import { getRunBranches, type GetRunBranchesResult } from "./services/getRunBranches";
+import { getOperationAncestors, type GetOperationAncestorsResult } from "./services/getOperationAncestors";
+import { getRunOperations, type GetRunOperationsResult } from "./services/getRunOperations";
+import { getRunsBySnapshot, type GetRunsBySnapshotResult } from "./services/getRunsBySnapshot";
+import { saveOperationCapture, type SaveOperationCaptureResult } from "./services/saveOperationCapture";
+import { getOperationCaptures, type GetOperationCapturesResult } from "./services/getOperationCaptures";
 
 export const operationsRouter = router({
   createRun: authenticatedProcedure
     .input(createRunInputSchema)
     .output(createRunOutputSchema)
     .mutation(async ({ ctx, input }): Promise<CreateRunResult> =>
-      createRun({
-        orgId: ctx.orgId,
-        userId: ctx.userId,
-        snapshotId: input.snapshotId,
-        name: input.name,
-      }),
+      createRun({ orgId: ctx.orgId, userId: ctx.userId, snapshotId: input.snapshotId, name: input.name }),
     ),
 
-  createBranch: authenticatedProcedure
-    .input(createBranchInputSchema)
-    .output(createBranchOutputSchema)
-    .mutation(async ({ ctx, input }): Promise<CreateBranchResult> =>
-      createBranch({
+  appendOperation: authenticatedProcedure
+    .input(appendOperationInputSchema)
+    .output(appendOperationOutputSchema)
+    .mutation(async ({ ctx, input }): Promise<AppendOperationResult> =>
+      appendOperation({
         orgId: ctx.orgId,
         userId: ctx.userId,
         runId: input.runId,
-        name: input.name,
-        parentBranchId: input.parentBranchId,
-        forkedFromStepId: input.forkedFromStepId,
-      }),
-    ),
-
-  archiveBranch: authenticatedProcedure
-    .input(archiveBranchInputSchema)
-    .output(archiveBranchOutputSchema)
-    .mutation(async ({ ctx, input }): Promise<ArchiveBranchResult> =>
-      archiveBranch({
-        orgId: ctx.orgId,
-        runId: input.runId,
-        branchId: input.branchId,
-      }),
-    ),
-
-  appendStep: authenticatedProcedure
-    .input(appendStepInputSchema)
-    .output(appendStepOutputSchema)
-    .mutation(async ({ ctx, input }): Promise<AppendStepResult> =>
-      appendStep({
-        orgId: ctx.orgId,
-        userId: ctx.userId,
-        runId: input.runId,
-        branchId: input.branchId,
         documentId: input.documentId,
-        stepType: input.stepType,
+        operationType: input.operationType,
         idempotencyKey: input.idempotencyKey,
-        parentStepId: input.parentStepId,
-        supersedesStepId: input.supersedesStepId,
+        parentOperationId: input.parentOperationId,
+        supersedesOperationId: input.supersedesOperationId,
         parametersJson: input.parametersJson,
       }),
     ),
 
-  completeBranch: authenticatedProcedure
-    .input(completeBranchInputSchema)
-    .output(completeBranchOutputSchema)
-    .mutation(async ({ ctx, input }): Promise<CompleteBranchResult> =>
-      completeBranch({
+  getRunOperations: authenticatedProcedure
+    .input(getRunOperationsInputSchema)
+    .output(getRunOperationsOutputSchema)
+    .query(async ({ ctx, input }): Promise<GetRunOperationsResult> =>
+      getRunOperations({ orgId: ctx.orgId, runId: input.runId }),
+    ),
+
+  getOperationAncestors: authenticatedProcedure
+    .input(getOperationAncestorsInputSchema)
+    .output(getOperationAncestorsOutputSchema)
+    .query(async ({ ctx, input }): Promise<GetOperationAncestorsResult> =>
+      getOperationAncestors({ orgId: ctx.orgId, runId: input.runId, operationId: input.operationId }),
+    ),
+
+  saveOperationCapture: authenticatedProcedure
+    .input(saveOperationCaptureInputSchema)
+    .output(saveOperationCaptureOutputSchema)
+    .mutation(async ({ ctx, input }): Promise<SaveOperationCaptureResult> =>
+      saveOperationCapture({
         orgId: ctx.orgId,
-        userId: ctx.userId,
         runId: input.runId,
-        branchId: input.branchId,
-        idempotencyKey: input.idempotencyKey,
-        generateAiSummary: input.generateAiSummary,
+        runOperationId: input.runOperationId,
+        captureType: input.captureType,
+        payloadJson: input.payloadJson,
+        summaryText: input.summaryText,
       }),
     ),
 
-  getRunBranches: authenticatedProcedure
-    .input(getRunBranchesInputSchema)
-    .output(getRunBranchesOutputSchema)
-    .query(async ({ ctx, input }): Promise<GetRunBranchesResult> =>
-      getRunBranches({
-        orgId: ctx.orgId,
-        runId: input.runId,
-      }),
+  getOperationCaptures: authenticatedProcedure
+    .input(getOperationCapturesInputSchema)
+    .output(getOperationCapturesOutputSchema)
+    .query(async ({ ctx, input }): Promise<GetOperationCapturesResult> =>
+      getOperationCaptures({ orgId: ctx.orgId, runId: input.runId, operationId: input.operationId }),
     ),
 
   getRunsBySnapshot: authenticatedProcedure
     .input(getRunsBySnapshotInputSchema)
     .output(getRunsBySnapshotOutputSchema)
     .query(async ({ ctx, input }): Promise<GetRunsBySnapshotResult> =>
-      getRunsBySnapshot({
-        orgId: ctx.orgId,
-        snapshotId: input.snapshotId,
-        limit: input.limit,
-      }),
-    ),
-
-  getBranchEffectiveHistory: authenticatedProcedure
-    .input(getBranchEffectiveHistoryInputSchema)
-    .output(getBranchEffectiveHistoryOutputSchema)
-    .query(async ({ ctx, input }): Promise<GetBranchEffectiveHistoryResult> =>
-      getBranchEffectiveHistory({
-        orgId: ctx.orgId,
-        runId: input.runId,
-        branchId: input.branchId,
-      }),
+      getRunsBySnapshot({ orgId: ctx.orgId, snapshotId: input.snapshotId, limit: input.limit }),
     ),
 });
 

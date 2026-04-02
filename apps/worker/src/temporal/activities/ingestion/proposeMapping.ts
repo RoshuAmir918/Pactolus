@@ -1,6 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { mappingProposalSchema } from "@db/schema/mappingSchema";
-import { appendRunStep, insertRunStepArtifact } from "@db/schema/operations/runHistory";
+import { appendRunOperation } from "@db/schema/operations/runHistory";
 import { rawRows, runs, snapshotInputs, snapshots } from "@db/schema";
 import { db } from "../../../db/client";
 import { env } from "../../../env";
@@ -151,7 +151,7 @@ export async function proposeMappingActivity(
     const proposalRaw = JSON.parse(stripCodeFence(content));
     const proposal = mappingProposalSchema.parse(proposalRaw);
 
-    const suggestedStep = await appendRunStep(db, {
+    const suggestedStep = await appendRunOperation(db, {
       runId: input.runId,
       snapshotInputId: input.snapshotInputId,
       stepType: "SUGGESTED_MAPPING",
@@ -159,9 +159,9 @@ export async function proposeMappingActivity(
       parametersJson: proposal,
     });
 
-    await insertRunStepArtifact(db, {
+    await insertRunPipelineContext(db, {
       runStepId: suggestedStep.id,
-      artifactType: "AI_RAW_RESPONSE",
+      contextType: "AI_RAW_RESPONSE",
       dataJson: {
         content,
         completion,

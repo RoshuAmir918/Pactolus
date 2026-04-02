@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { mappingProposalSchema } from "@db/schema/mappingSchema";
-import { insertRunStepArtifact } from "@db/schema/operations/runHistory";
+import { insertRunPipelineContext } from "@db/schema/operations/runHistory";
 import { rawRows, runOperations, runs, snapshotInputs, snapshots } from "@db/schema";
 import { db } from "../../../db/client";
 import type { ValidateMappingInput, ValidateMappingResult } from "./types";
@@ -52,7 +52,7 @@ export async function validateMappingActivity(
         eq(runOperations.id, input.acceptedMappingStepId),
         eq(runOperations.runId, input.runId),
         eq(runOperations.snapshotInputId, input.snapshotInputId),
-        eq(runOperations.stepType, "ACCEPTED_MAPPING"),
+        eq(runOperations.operationType, "ACCEPTED_MAPPING"),
       ),
     )
     .limit(1);
@@ -65,9 +65,9 @@ export async function validateMappingActivity(
   if (!parsed.success) {
     const errors = parsed.error.issues.map((issue) => issue.message);
 
-    await insertRunStepArtifact(db, {
+    await insertRunPipelineContext(db, {
       runStepId: input.acceptedMappingStepId,
-      artifactType: "MAPPING_VALIDATION_REPORT",
+      contextType: "MAPPING_VALIDATION_REPORT",
       dataJson: {
         errors,
       },
@@ -175,9 +175,9 @@ export async function validateMappingActivity(
 
   const isValid = errors.length === 0;
 
-  await insertRunStepArtifact(db, {
+  await insertRunPipelineContext(db, {
     runStepId: input.acceptedMappingStepId,
-    artifactType: "MAPPING_VALIDATION_REPORT",
+    contextType: "MAPPING_VALIDATION_REPORT",
     dataJson: {
       errors,
       checkedRows: sampleRows.length,

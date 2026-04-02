@@ -90,15 +90,15 @@ export function drawScene(
     if (isSkel) {
       ctx.beginPath();
       ctx.roundRect(nx, ny, NW, NH, 5);
-      ctx.fillStyle = C.skeletonBg;
+      ctx.fillStyle = isSel ? C.skeleton : C.skeletonBg;
       ctx.fill();
-      ctx.setLineDash([3, 3]);
-      ctx.strokeStyle = isHov ? C.text : C.skeleton;
-      ctx.lineWidth = 1;
+      ctx.setLineDash(isSel ? [] : [3, 3]);
+      ctx.strokeStyle = isSel ? C.text : (isHov ? C.text : C.skeleton);
+      ctx.lineWidth = isSel ? 1.5 : 1;
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.font = "400 9px system-ui,sans-serif";
-      ctx.fillStyle = isHov ? C.textSub : C.skeleton;
+      ctx.font = `${isSel ? "500" : "400"} 9px system-ui,sans-serif`;
+      ctx.fillStyle = isSel ? C.text : (isHov ? C.textSub : C.skeleton);
       ctx.textBaseline = "middle";
       ctx.fillText(truncate(node.label, 12), nx + 8, node.ly);
       continue;

@@ -2,7 +2,6 @@ import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import dbClient from "@api/db/client";
 import { snapshots, runs } from "@db/schema";
-import { ensureMainBranchForRun } from "@db/schema/operations/runHistory";
 
 const { db } = dbClient;
 
@@ -15,7 +14,6 @@ export type CreateRunInput = {
 
 export type CreateRunResult = {
   runId: string;
-  mainBranchId: string;
   status: "draft" | "running" | "awaiting_confirmation" | "ready" | "failed" | "locked";
 };
 
@@ -47,14 +45,8 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
       status: runs.status,
     });
 
-  const mainBranch = await ensureMainBranchForRun(db, {
-    runId: createdRun.runId,
-    createdByUserId: input.userId,
-  });
-
   return {
     runId: createdRun.runId,
-    mainBranchId: mainBranch.id,
     status: createdRun.status,
   };
 }

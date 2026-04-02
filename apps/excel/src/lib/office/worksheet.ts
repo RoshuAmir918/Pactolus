@@ -250,6 +250,35 @@ export async function captureAllSheetSlices(maxSheets = 6, maxRows = 80): Promis
   });
 }
 
+export type RegionValues = {
+  address: string;
+  sheetName: string;
+  values: unknown[][];
+};
+
+export async function readOutputRegionValues(regions: MonitoredRegion[]): Promise<RegionValues[]> {
+  const outputRegions = regions.filter(
+    (r) => r.regionType === "output" && r.address && r.sheetName,
+  );
+  if (outputRegions.length === 0) return [];
+
+  return Excel.run(async (context) => {
+    const fetches: Array<{ region: MonitoredRegion; range: Excel.Range }> = [];
+    for (const region of outputRegions) {
+      const sheet = context.workbook.worksheets.getItem(region.sheetName!);
+      const range = sheet.getRange(region.address);
+      range.load("values");
+      fetches.push({ region, range });
+    }
+    await context.sync();
+    return fetches.map(({ region, range }) => ({
+      address: region.address,
+      sheetName: region.sheetName!,
+      values: (range.values ?? []) as unknown[][],
+    }));
+  });
+}
+
 export async function selectRange(sheetName: string | undefined, address: string): Promise<void> {
   return Excel.run(async (context) => {
     const sheet = sheetName

@@ -8,7 +8,6 @@ export const chatMessageSchema = z.object({
 export const sendMessageInputSchema = z.object({
   snapshotId: z.uuid(),
   runId: z.uuid().nullable(),
-  branchId: z.uuid().nullable(),
   messages: z.array(chatMessageSchema).min(1),
   selectedRange: z.string().nullable().optional(),
 });

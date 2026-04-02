@@ -75,8 +75,10 @@ export function RunTreeCanvas(props: {
 
   function selectNode(id: string) {
     const st = s.current;
-    if (id === st.selectedId) return;
-    st.selectedId = id;
+    const isSkeleton = id.startsWith("__skeleton_");
+    if (!isSkeleton && id === st.selectedId) return;
+    // Toggling a skeleton deselects it visually; selecting a real node clears skeleton selection
+    st.selectedId = isSkeleton && id === st.selectedId ? "" : id;
     const node = nodes.find((n) => n.id === id);
     props.onSelectNode(id, node?.branchId);
     snapTo(id);

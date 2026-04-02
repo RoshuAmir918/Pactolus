@@ -3,7 +3,8 @@ import dbClient from "@api/db/client";
 import {
   documentSheets,
   documents,
-  runOperationArtifacts,
+  runPipelineContext,
+  runOperationCaptures,
   runOperations,
 } from "@db/schema";
 
@@ -16,7 +17,6 @@ export type SendMessageInput = {
   orgId: string;
   snapshotId: string;
   runId: string | null;
-  branchId: string | null;
   messages: Array<{ role: "user" | "assistant"; text: string }>;
   selectedRange?: string | null;
 };
@@ -59,33 +59,46 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     )
     .orderBy(documents.filename, documentSheets.sheetIndex);
 
-  // 2. Load run artifacts for the current branch (excluding raw AI responses)
-  type ArtifactRow = { id: string; stepType: string; artifactType: string; dataJson: unknown };
-  let artifacts: ArtifactRow[] = [];
+  // 2a. Load pipeline context for the run (excluding raw AI responses)
+  type PipelineContextRow = { id: string; operationType: string; contextType: string; dataJson: unknown };
+  let pipelineContextRows: PipelineContextRow[] = [];
 
-  if (input.runId && input.branchId) {
+  if (input.runId) {
     const rows = await db
       .select({
-        id: runOperationArtifacts.id,
-        stepType: runOperations.stepType,
-        artifactType: runOperationArtifacts.artifactType,
-        dataJson: runOperationArtifacts.dataJson,
+        id: runPipelineContext.id,
+        operationType: runOperations.operationType,
+        contextType: runPipelineContext.contextType,
+        dataJson: runPipelineContext.dataJson,
       })
-      .from(runOperationArtifacts)
-      .innerJoin(runOperations, eq(runOperations.id, runOperationArtifacts.runStepId))
-      .where(
-        and(
-          eq(runOperations.runId, input.runId),
-          eq(runOperations.branchId, input.branchId),
-        ),
-      )
-      .orderBy(runOperations.stepIndex);
+      .from(runPipelineContext)
+      .innerJoin(runOperations, eq(runOperations.id, runPipelineContext.runStepId))
+      .where(eq(runOperations.runId, input.runId))
+      .orderBy(runOperations.operationIndex);
 
-    artifacts = rows.filter((a) => a.artifactType !== "AI_RAW_RESPONSE");
+    pipelineContextRows = rows.filter((a) => a.contextType !== "AI_RAW_RESPONSE");
+  }
+
+  // 2b. Load analyst captures for the run (narrative, output values)
+  type CaptureRow = { id: string; operationType: string; captureType: string; summaryText: string | null };
+  let captureRows: CaptureRow[] = [];
+
+  if (input.runId) {
+    captureRows = await db
+      .select({
+        id: runOperationCaptures.id,
+        operationType: runOperations.operationType,
+        captureType: runOperationCaptures.captureType,
+        summaryText: runOperationCaptures.summaryText,
+      })
+      .from(runOperationCaptures)
+      .innerJoin(runOperations, eq(runOperations.id, runOperationCaptures.runOperationId))
+      .where(eq(runOperations.runId, input.runId))
+      .orderBy(runOperations.operationIndex);
   }
 
   // 3. Build system prompt with metadata
-  const systemPrompt = buildSystemPrompt(sheets, artifacts, input.selectedRange ?? null);
+  const systemPrompt = buildSystemPrompt(sheets, pipelineContextRows, captureRows, input.selectedRange ?? null);
 
   // 4. Convert messages to Anthropic format
   const claudeMessages = input.messages.map((m) => ({
@@ -137,12 +150,12 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
       properties: {
         source_type: {
           type: "string",
-          enum: ["document_sheet", "run_step_artifact"],
-          description: "Whether to fetch a document sheet or a run step artifact",
+          enum: ["document_sheet", "run_pipeline_context", "run_step_capture"],
+          description: "Whether to fetch a document sheet, pipeline context entry, or analyst capture",
         },
         source_id: {
           type: "string",
-          description: "The UUID of the document_sheet or run_step_artifact shown in the context above",
+          description: "The UUID shown in the context above",
         },
         reason: {
           type: "string",
@@ -277,18 +290,29 @@ async function resolveSource(
     );
   }
 
-  if (sourceType === "run_step_artifact") {
-    const [artifact] = await db
+  if (sourceType === "run_pipeline_context") {
+    const [ctx] = await db
       .select({
-        artifactType: runOperationArtifacts.artifactType,
-        dataJson: runOperationArtifacts.dataJson,
+        contextType: runPipelineContext.contextType,
+        dataJson: runPipelineContext.dataJson,
       })
-      .from(runOperationArtifacts)
-      .where(eq(runOperationArtifacts.id, sourceId))
+      .from(runPipelineContext)
+      .where(eq(runPipelineContext.id, sourceId))
       .limit(1);
 
-    if (!artifact) return "Artifact not found.";
-    return JSON.stringify(artifact.dataJson, null, 2);
+    if (!ctx) return "Pipeline context not found.";
+    return JSON.stringify(ctx.dataJson, null, 2);
+  }
+
+  if (sourceType === "run_step_capture") {
+    const [cap] = await db
+      .select({ payloadJson: runOperationCaptures.payloadJson })
+      .from(runOperationCaptures)
+      .where(eq(runOperationCaptures.id, sourceId))
+      .limit(1);
+
+    if (!cap) return "Capture not found.";
+    return JSON.stringify(cap.payloadJson, null, 2);
   }
 
   return "Unknown source type.";
@@ -302,28 +326,44 @@ async function callAnthropic(input: {
 }): Promise<{ stop_reason: string; content: unknown[] }> {
   const model = process.env.CLAUDE_MODEL?.trim()?.replace(/-latest$/, "") ?? DEFAULT_MODEL;
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": input.apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      system: input.systemPrompt,
-      tools: input.tools,
-      messages: input.messages,
-    }),
+  const body = JSON.stringify({
+    model,
+    max_tokens: 4096,
+    system: input.systemPrompt,
+    tools: input.tools,
+    messages: input.messages,
   });
 
-  if (!response.ok) {
-    throw new Error(`Anthropic API error ${response.status}: ${await response.text()}`);
+  const MAX_RETRIES = 4;
+  let delay = 15_000;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": input.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
+      },
+      body,
+    });
+
+    if (response.status === 429 && attempt < MAX_RETRIES) {
+      const retryAfter = Number(response.headers.get("retry-after") ?? 0) * 1000;
+      await new Promise((r) => setTimeout(r, retryAfter || delay));
+      delay = Math.min(delay * 2, 60_000);
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Anthropic API error ${response.status}: ${await response.text()}`);
+    }
+
+    return response.json() as Promise<{ stop_reason: string; content: unknown[] }>;
   }
 
-  return response.json() as Promise<{ stop_reason: string; content: unknown[] }>;
+  throw new Error("Anthropic API rate limit exceeded after retries.");
 }
 
 function buildSystemPrompt(
@@ -336,11 +376,17 @@ function buildSystemPrompt(
     headersJson: unknown;
     sheetAboutJson: unknown;
   }>,
-  artifacts: Array<{
+  pipelineContext: Array<{
     id: string;
-    stepType: string;
-    artifactType: string;
+    operationType: string;
+    contextType: string;
     dataJson: unknown;
+  }>,
+  captures: Array<{
+    id: string;
+    operationType: string;
+    captureType: string;
+    summaryText: string | null;
   }>,
   selectedRange: string | null,
 ): string {
@@ -402,28 +448,35 @@ function buildSystemPrompt(
     }
   }
 
-  if (artifacts.length > 0) {
-    parts.push("\n## Analysis Artifacts (this branch)");
-    for (const artifact of artifacts) {
-      const summary = summarizeArtifact(artifact.artifactType, artifact.dataJson);
-      parts.push(
-        `  - ${artifact.artifactType} from step "${artifact.stepType}" (id: ${artifact.id})`,
-      );
+  if (pipelineContext.length > 0) {
+    parts.push("\n## Pipeline Context (this branch)");
+    for (const ctx of pipelineContext) {
+      const summary = summarizePipelineContext(ctx.contextType, ctx.dataJson);
+      parts.push(`  - ${ctx.contextType} from operation "${ctx.operationType}" (id: ${ctx.id})`);
       if (summary) parts.push(`    ${summary}`);
+    }
+  }
+
+  if (captures.length > 0) {
+    parts.push("\n## Analyst Captures (this branch)");
+    for (const cap of captures) {
+      if (cap.summaryText) {
+        parts.push(`  - [${cap.captureType}] ${cap.summaryText}`);
+      }
     }
   }
 
   return parts.join("\n");
 }
 
-function summarizeArtifact(artifactType: string, dataJson: unknown): string {
+function summarizePipelineContext(contextType: string, dataJson: unknown): string {
   if (!dataJson || typeof dataJson !== "object") return "";
   const data = dataJson as Record<string, unknown>;
 
-  if (artifactType === "CANONICALIZATION_SUMMARY") {
+  if (contextType === "CANONICALIZATION_SUMMARY") {
     return typeof data.summary === "string" ? data.summary.slice(0, 300) : "";
   }
-  if (artifactType === "MAPPING_VALIDATION_REPORT") {
+  if (contextType === "MAPPING_VALIDATION_REPORT") {
     const issues = Array.isArray(data.issues) ? data.issues.length : 0;
     return issues > 0 ? `${issues} validation issue(s) found` : "Validation passed";
   }

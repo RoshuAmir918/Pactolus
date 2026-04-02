@@ -25,28 +25,45 @@ export async function callClaudeTool<T extends Record<string, unknown>>(input: {
     contentBlocks: input.contentBlocks,
   });
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
+  const requestBody = JSON.stringify({
+    model,
+    max_tokens: input.maxTokens,
+    temperature: 0.1,
+    tools: [input.tool],
+    tool_choice: {
+      type: "tool",
+      name: input.tool.name,
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: input.maxTokens,
-      temperature: 0.1,
-      tools: [input.tool],
-      tool_choice: {
-        type: "tool",
-        name: input.tool.name,
-      },
-      messages: [{ role: "user", content: messagesContent }],
-    }),
+    messages: [{ role: "user", content: messagesContent }],
   });
-  if (!response.ok) {
-    throw new Error(`Anthropic tool error ${response.status}: ${await response.text()}`);
+
+  const MAX_RETRIES = 4;
+  let delay = 15_000;
+  let response: Response | undefined;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
+      },
+      body: requestBody,
+    });
+
+    if (response.status === 429 && attempt < MAX_RETRIES) {
+      const retryAfter = Number(response.headers.get("retry-after") ?? 0) * 1000;
+      await new Promise((r) => setTimeout(r, retryAfter || delay));
+      delay = Math.min(delay * 2, 60_000);
+      continue;
+    }
+    break;
+  }
+
+  if (!response!.ok) {
+    throw new Error(`Anthropic tool error ${response!.status}: ${await response!.text()}`);
   }
 
   const data = (await response.json()) as {

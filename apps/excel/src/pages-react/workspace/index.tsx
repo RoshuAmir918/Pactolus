@@ -1,44 +1,37 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAtom } from "jotai";
 import { Cog, GitBranch, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { BranchOption, MonitoredRegion, RunSession, SourceDocument, StepRecord } from "@/features/types";
+import type { MonitoredRegion, OperationRecord, RunSession, SourceDocument } from "@/features/types";
 import { chatMessagesAtom } from "@/features/session/atoms";
 import { ChatPanel } from "./panels/ChatPanel";
 import { RunsPanel } from "./panels/RunsPanel";
-import { buildTreeFromSteps } from "./tree/layout";
+import { buildTreeFromOperations } from "./tree/layout";
 import { getSelectedRangeSlice, formatRangeSliceForContext, writeRangeValues, getActiveCell } from "@/lib/office/worksheet";
 import type { RangeSlice } from "@/lib/office/worksheet";
-import type { Tab, ChatMessage, ExcelAction } from "./types";
+import type { Tab, ChatMessage, ExcelAction, SaveContext } from "./types";
 
 export function WorkspacePage(props: {
   runSession: RunSession;
-  availableBranches: BranchOption[];
-  committedOperations: StepRecord[];
+  operations: OperationRecord[];
   sourceDocuments: SourceDocument[];
   detectedRegions: MonitoredRegion[];
   isDetectingRegions: boolean;
   onDetectRegions: () => Promise<void>;
   onSelectRegion: (sheetName: string | undefined, address: string) => Promise<void>;
   status: { kind: "ok" | "error"; message: string } | null;
-  canFork: boolean;
   onBackToRun: () => void;
-  onSelectBranch: (branchId: string) => void;
-  onDeleteBranch: (branchId: string) => Promise<void> | void;
-  onNewScenario: (name: string) => Promise<void>;
-  onSaveScenario: (narrative: string) => Promise<void>;
+  onSaveScenario: (narrative: string, context: SaveContext) => Promise<void>;
   onOpenWorkbook: (documentId: string) => void;
   onOpenDocument: (documentId: string, fileExtension: string | null) => void;
   onUploadDocument: (file: File) => Promise<void>;
-  onAsk?: (text: string, context: { runId: string; branchId: string | null; selectedRange: string | null; history: ChatMessage[] }) => Promise<{ reply: string; excelAction?: ExcelAction | null }>;
+  onAsk?: (text: string, context: { runId: string; selectedRange: string | null; history: ChatMessage[] }) => Promise<{ reply: string; excelAction?: ExcelAction | null }>;
 }) {
-  const activeBranch = props.availableBranches.find((b) => b.id === props.runSession.branchId);
-
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [messages, setMessages] = useAtom(chatMessagesAtom);
   const [selectedRangeSlice, setSelectedRangeSlice] = useState<RangeSlice | null>(null);
 
-  // Subscribe to Excel selection changes and read cell values when user highlights a range
+  // Subscribe to Excel selection changes
   useEffect(() => {
     if (typeof Excel === "undefined") return;
 
@@ -50,7 +43,7 @@ export function WorkspacePage(props: {
           const slice = await getSelectedRangeSlice();
           setSelectedRangeSlice(slice);
         } catch {
-          // ignore — selection may have moved before we could read it
+          // ignore
         }
       });
       await context.sync();
@@ -66,11 +59,9 @@ export function WorkspacePage(props: {
     };
   }, []);
 
-  const root = buildTreeFromSteps(
-    props.committedOperations,
-    props.availableBranches,
-    props.runSession.branchId,
-    props.runSession.runId,
+  const root = useMemo(
+    () => buildTreeFromOperations(props.operations),
+    [props.operations],
   );
 
   async function handleSend(text: string) {
@@ -82,14 +73,13 @@ export function WorkspacePage(props: {
       ]);
       return;
     }
-    const history = messages; // capture history before adding new messages
+    const history = messages;
     const formattedRange = selectedRangeSlice ? formatRangeSliceForContext(selectedRangeSlice) : null;
     setMessages((m) => [...m, { role: "user", text }]);
     setMessages((m) => [...m, { role: "assistant", text: "Thinking…" }]);
     try {
       const result = await props.onAsk(text, {
         runId: props.runSession.runId ?? "",
-        branchId: props.runSession.branchId ?? null,
         selectedRange: formattedRange,
         history,
       });
@@ -106,8 +96,8 @@ export function WorkspacePage(props: {
   }
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
-    { id: "chat", label: "Chat",  icon: MessageSquare },
-    { id: "runs", label: "Runs",  icon: GitBranch },
+    { id: "chat", label: "Chat", icon: MessageSquare },
+    { id: "runs", label: "Runs", icon: GitBranch },
   ];
 
   return (
@@ -126,12 +116,12 @@ export function WorkspacePage(props: {
         </button>
       </div>
 
-      {/* Scenario status bar */}
+      {/* Run status bar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border flex-shrink-0">
         <span className="size-1.5 rounded-full bg-blue-500 animate-pulse flex-shrink-0" />
         <button type="button" onClick={() => setActiveTab("runs")} className="flex items-center gap-2 flex-1 min-w-0 text-left">
           <span className="text-[11px] font-medium text-foreground truncate flex-1">
-            {activeBranch?.name ?? "Active scenario"}
+            Active analysis
           </span>
           <span className="text-[9px] text-muted-foreground font-mono flex-shrink-0">
             {props.runSession.runId?.slice(0, 8) ?? "—"}
@@ -143,7 +133,7 @@ export function WorkspacePage(props: {
       <main className="flex-1 overflow-hidden">
         {activeTab === "chat" && (
           <ChatPanel
-            activeRunName={activeBranch?.name ?? "this run"}
+            activeRunName="this run"
             selectedRange={selectedRangeSlice ? `${selectedRangeSlice.sheetName}!${selectedRangeSlice.address} (${selectedRangeSlice.rowCount}×${selectedRangeSlice.columnCount})` : null}
             onClearRange={() => setSelectedRangeSlice(null)}
             messages={messages}
@@ -160,21 +150,16 @@ export function WorkspacePage(props: {
         )}
         {activeTab === "runs" && (
           <RunsPanel
-            activeBranchName={activeBranch?.name ?? "Active scenario"}
             runId={props.runSession.runId ?? undefined}
-            canNewScenario={props.canFork}
-            onNewScenario={props.onNewScenario}
-            onSaveScenario={props.onSaveScenario}
             root={root}
-            committedOperations={props.committedOperations}
+            operations={props.operations}
             sourceDocuments={props.sourceDocuments}
             detectedRegions={props.detectedRegions}
             isDetectingRegions={props.isDetectingRegions}
             onDetectRegions={props.onDetectRegions}
             onSelectRegion={props.onSelectRegion}
-            onSelectNode={(_id, branchId) => {
-              if (branchId) props.onSelectBranch(branchId);
-            }}
+            onSaveScenario={props.onSaveScenario}
+            onSelectNode={() => {}}
             onOpenWorkbook={props.onOpenWorkbook}
             onOpenDocument={props.onOpenDocument}
           />

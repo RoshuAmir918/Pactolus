@@ -1,7 +1,6 @@
 import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { clients } from "../clients";
 import { organizations } from "../organizations";
-import { runBranches } from "../operations/runBranches";
 import { runOperations } from "../operations/runOperations";
 import { runs } from "../operations/runs";
 import { snapshots } from "../snapshots";
@@ -46,7 +45,6 @@ export const contextDocuments = pgTable(
     clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
     snapshotId: uuid("snapshot_id").references(() => snapshots.id, { onDelete: "set null" }),
     runId: uuid("run_id").references(() => runs.id, { onDelete: "set null" }),
-    branchId: uuid("branch_id").references(() => runBranches.id, { onDelete: "set null" }),
     sourceStepId: uuid("source_step_id").references(() => runOperations.id, {
       onDelete: "set null",
     }),
@@ -73,7 +71,6 @@ export const contextDocuments = pgTable(
     index("context_documents_client_id_idx").on(table.clientId),
     index("context_documents_snapshot_id_idx").on(table.snapshotId),
     index("context_documents_run_id_idx").on(table.runId),
-    index("context_documents_branch_id_idx").on(table.branchId),
     index("context_documents_source_step_id_idx").on(table.sourceStepId),
     index("context_documents_scope_type_idx").on(table.scopeType),
     index("context_documents_doc_type_idx").on(table.docType),
