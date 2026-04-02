@@ -11,10 +11,10 @@ import { trpc } from "@/lib/trpc-client";
 //   lx = horizontal position (depth axis)
 //   ly = vertical position   (sibling axis)
 
-const NW      = 96;   // node width
-const NH      = 28;   // node height
-const SIBLING = 12;   // vertical gap between siblings
-const LEVEL   = 56;   // horizontal gap between parent and child
+const NW      = 152;  // node width
+const NH      = 44;   // node height
+const SIBLING = 16;   // vertical gap between siblings
+const LEVEL   = 72;   // horizontal gap between parent and child
 const PADDING = 16;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -35,6 +35,7 @@ type TreeNode = {
   id: string;
   label: string;
   meta: string;
+  branchRootId: string;
   children: TreeNode[];
   lx: number;
   ly: number;
@@ -43,7 +44,16 @@ type TreeNode = {
 // ── Tree building ─────────────────────────────────────────────────────────────
 
 function buildTree(operations: Operation[]): TreeNode {
-  const ingest: TreeNode = { op: null, id: "ingest", label: "Ingest", meta: "source data", children: [], lx: 0, ly: 0 };
+  const ingest: TreeNode = {
+    op: null,
+    id: "ingest",
+    label: "Ingest",
+    meta: "source data",
+    branchRootId: "ingest",
+    children: [],
+    lx: 0,
+    ly: 0,
+  };
   const nodeById = new Map<string, TreeNode>();
   nodeById.set("ingest", ingest);
 
@@ -62,7 +72,16 @@ function buildTree(operations: Operation[]): TreeNode {
       ? new Date(op.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })
       : "";
     const parent = op.parentOperationId ? (nodeById.get(op.parentOperationId) ?? ingest) : ingest;
-    const node: TreeNode = { op, id: op.id, label, meta, children: [], lx: 0, ly: 0 };
+    const node: TreeNode = {
+      op,
+      id: op.id,
+      label,
+      meta,
+      branchRootId: parent.id === "ingest" ? op.id : parent.branchRootId,
+      children: [],
+      lx: 0,
+      ly: 0,
+    };
     nodeById.set(op.id, node);
     parent.children.push(node);
   }
@@ -93,6 +112,43 @@ function allNodes(node: TreeNode, acc: TreeNode[] = []): TreeNode[] {
   acc.push(node);
   node.children.forEach((c) => allNodes(c, acc));
   return acc;
+}
+
+type BranchStyle = {
+  dot: string;
+  text: string;
+  border: string;
+  hover: string;
+  active: string;
+  edge: string;
+};
+
+const pastelBranchStyles: BranchStyle[] = [
+  { dot: "bg-emerald-400", text: "text-emerald-700 dark:text-emerald-300", border: "border-emerald-300/80 dark:border-emerald-800/80", hover: "hover:bg-emerald-50/70 dark:hover:bg-emerald-950/35", active: "bg-emerald-500 border-emerald-500 text-white", edge: "#6ee7b7" },
+  { dot: "bg-sky-400", text: "text-sky-700 dark:text-sky-300", border: "border-sky-300/80 dark:border-sky-800/80", hover: "hover:bg-sky-50/70 dark:hover:bg-sky-950/35", active: "bg-sky-500 border-sky-500 text-white", edge: "#7dd3fc" },
+  { dot: "bg-violet-400", text: "text-violet-700 dark:text-violet-300", border: "border-violet-300/80 dark:border-violet-800/80", hover: "hover:bg-violet-50/70 dark:hover:bg-violet-950/35", active: "bg-violet-500 border-violet-500 text-white", edge: "#c4b5fd" },
+  { dot: "bg-amber-400", text: "text-amber-700 dark:text-amber-300", border: "border-amber-300/80 dark:border-amber-800/80", hover: "hover:bg-amber-50/70 dark:hover:bg-amber-950/35", active: "bg-amber-500 border-amber-500 text-white", edge: "#fcd34d" },
+  { dot: "bg-rose-400", text: "text-rose-700 dark:text-rose-300", border: "border-rose-300/80 dark:border-rose-800/80", hover: "hover:bg-rose-50/70 dark:hover:bg-rose-950/35", active: "bg-rose-500 border-rose-500 text-white", edge: "#fda4af" },
+  { dot: "bg-cyan-400", text: "text-cyan-700 dark:text-cyan-300", border: "border-cyan-300/80 dark:border-cyan-800/80", hover: "hover:bg-cyan-50/70 dark:hover:bg-cyan-950/35", active: "bg-cyan-500 border-cyan-500 text-white", edge: "#67e8f9" },
+  { dot: "bg-lime-400", text: "text-lime-700 dark:text-lime-300", border: "border-lime-300/80 dark:border-lime-800/80", hover: "hover:bg-lime-50/70 dark:hover:bg-lime-950/35", active: "bg-lime-500 border-lime-500 text-white", edge: "#bef264" },
+  { dot: "bg-fuchsia-400", text: "text-fuchsia-700 dark:text-fuchsia-300", border: "border-fuchsia-300/80 dark:border-fuchsia-800/80", hover: "hover:bg-fuchsia-50/70 dark:hover:bg-fuchsia-950/35", active: "bg-fuchsia-500 border-fuchsia-500 text-white", edge: "#f0abfc" },
+];
+
+function buildBranchStyleMap(nodes: TreeNode): Map<string, BranchStyle>;
+function buildBranchStyleMap(nodes: TreeNode[]): Map<string, BranchStyle>;
+function buildBranchStyleMap(nodes: TreeNode | TreeNode[]): Map<string, BranchStyle> {
+  const list = Array.isArray(nodes) ? nodes : [nodes];
+  const map = new Map<string, BranchStyle>();
+  let idx = 0;
+
+  for (const node of list) {
+    const branchRootId = node.branchRootId;
+    if (branchRootId === "ingest" || map.has(branchRootId)) continue;
+    map.set(branchRootId, pastelBranchStyles[idx % pastelBranchStyles.length]);
+    idx += 1;
+  }
+
+  return map;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -141,6 +197,7 @@ export function BottomRunTree() {
 
   const { root, count } = loadState;
   const nodes = allNodes(root);
+  const branchStyleByRoot = buildBranchStyleMap(nodes);
 
   // Canvas dimensions
   const maxX = Math.max(...nodes.map((n) => n.lx)) + NW;
@@ -182,8 +239,9 @@ export function BottomRunTree() {
                       key={child.id}
                       d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
                       fill="none"
-                      stroke="hsl(var(--border))"
-                      strokeWidth={1.5}
+                      stroke={branchStyleByRoot.get(child.branchRootId)?.edge ?? "hsl(var(--border))"}
+                      strokeOpacity={0.85}
+                      strokeWidth={2}
                     />
                   );
                 }),
@@ -194,6 +252,7 @@ export function BottomRunTree() {
             {nodes.map((node) => {
               const isActive = activeNodeId === node.id;
               const isIngest = node.id === "ingest";
+              const branchStyle = branchStyleByRoot.get(node.branchRootId) ?? null;
               const left = node.lx + PADDING;
               const top  = node.ly + PADDING - NH / 2;
 
@@ -215,18 +274,41 @@ export function BottomRunTree() {
                   }}
                   style={{ position: "absolute", left, top, width: NW, height: NH }}
                   className={cn(
-                    "rounded-lg border text-[10px] font-medium flex items-center gap-1.5 px-2 transition-colors",
+                    "rounded-xl border shadow-sm text-xs font-medium flex items-center gap-2 px-3 transition-all",
                     isIngest
                       ? "bg-muted/50 border-border text-muted-foreground cursor-default"
                       : isActive
-                      ? "bg-blue-600 border-blue-600 text-white shadow-sm"
-                      : "bg-background border-border text-foreground hover:bg-muted/50 cursor-pointer",
+                      ? (branchStyle?.active ?? "bg-primary border-primary text-primary-foreground")
+                      : cn(
+                          "bg-card text-card-foreground cursor-pointer",
+                          branchStyle?.border ?? "border-border",
+                          branchStyle?.hover ?? "hover:bg-muted/40",
+                        ),
                   )}
                 >
+                  {!isIngest && (
+                    <span
+                      className={cn(
+                        "h-2.5 w-2.5 rounded-full shrink-0",
+                        branchStyle?.dot ?? "bg-primary",
+                        isActive && "bg-white/90",
+                      )}
+                    />
+                  )}
                   {isIngest
-                    ? <Database className="w-3 h-3 shrink-0" />
-                    : <Save className="w-3 h-3 shrink-0" />}
-                  <span className="truncate">{node.label}</span>
+                    ? <Database className="w-3.5 h-3.5 shrink-0" />
+                    : <Save className={cn("w-3.5 h-3.5 shrink-0", !isActive && (branchStyle?.text ?? "text-muted-foreground"))} />}
+                  <span className="truncate flex-1 text-left">{node.label}</span>
+                  {!isIngest && (
+                    <span
+                      className={cn(
+                        "text-[10px] tabular-nums shrink-0",
+                        isActive ? "text-white/90" : "text-muted-foreground",
+                      )}
+                    >
+                      {node.meta}
+                    </span>
+                  )}
                 </button>
               );
             })}

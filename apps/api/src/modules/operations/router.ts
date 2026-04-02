@@ -4,19 +4,28 @@ import {
   appendOperationOutputSchema,
   createRunInputSchema,
   createRunOutputSchema,
+  generateOperationLabelInputSchema,
+  generateOperationLabelOutputSchema,
   getOperationAncestorsInputSchema,
   getOperationAncestorsOutputSchema,
   getOperationCapturesInputSchema,
   getOperationCapturesOutputSchema,
+  getOperationNoteInputSchema,
+  getOperationNoteOutputSchema,
   getRunOperationsInputSchema,
   getRunOperationsOutputSchema,
   getRunsBySnapshotInputSchema,
   getRunsBySnapshotOutputSchema,
   saveOperationCaptureInputSchema,
   saveOperationCaptureOutputSchema,
+  setOperationNoteInputSchema,
+  setOperationNoteOutputSchema,
 } from "./schemas";
 import { appendOperation, type AppendOperationResult } from "./services/appendOperation";
 import { createRun, type CreateRunResult } from "./services/createRun";
+import { generateOperationLabel, type GenerateOperationLabelResult } from "./services/generateOperationLabel";
+import { getOperationNote, type GetOperationNoteResult } from "./services/getOperationNote";
+import { setOperationNote, type SetOperationNoteResult } from "./services/setOperationNote";
 import { getOperationAncestors, type GetOperationAncestorsResult } from "./services/getOperationAncestors";
 import { getRunOperations, type GetRunOperationsResult } from "./services/getRunOperations";
 import { getRunsBySnapshot, type GetRunsBySnapshotResult } from "./services/getRunsBySnapshot";
@@ -81,6 +90,33 @@ export const operationsRouter = router({
     .output(getOperationCapturesOutputSchema)
     .query(async ({ ctx, input }): Promise<GetOperationCapturesResult> =>
       getOperationCaptures({ orgId: ctx.orgId, runId: input.runId, operationId: input.operationId }),
+    ),
+
+  setOperationNote: authenticatedProcedure
+    .input(setOperationNoteInputSchema)
+    .output(setOperationNoteOutputSchema)
+    .mutation(async ({ ctx, input }): Promise<SetOperationNoteResult> =>
+      setOperationNote({
+        orgId: ctx.orgId,
+        userId: ctx.userId,
+        runId: input.runId,
+        operationId: input.operationId,
+        noteText: input.noteText,
+      }),
+    ),
+
+  getOperationNote: authenticatedProcedure
+    .input(getOperationNoteInputSchema)
+    .output(getOperationNoteOutputSchema)
+    .query(async ({ ctx, input }): Promise<GetOperationNoteResult> =>
+      getOperationNote({ orgId: ctx.orgId, runId: input.runId, operationId: input.operationId }),
+    ),
+
+  generateOperationLabel: authenticatedProcedure
+    .input(generateOperationLabelInputSchema)
+    .output(generateOperationLabelOutputSchema)
+    .mutation(async ({ ctx, input }): Promise<GenerateOperationLabelResult> =>
+      generateOperationLabel({ orgId: ctx.orgId, runId: input.runId, operationId: input.operationId }),
     ),
 
   getRunsBySnapshot: authenticatedProcedure

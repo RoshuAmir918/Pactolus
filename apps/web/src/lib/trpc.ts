@@ -200,6 +200,21 @@ export type AuthTRPC = {
         }>;
       }>;
     };
+    generateOperationLabel: {
+      mutate: (input: { runId: string; operationId: string }) => Promise<{ label: string }>;
+    };
+    setOperationNote: {
+      mutate: (input: { runId: string; operationId: string; noteText: string }) => Promise<{
+        deleted: boolean;
+        noteText: string | null;
+      }>;
+    };
+    getOperationNote: {
+      query: (input: { runId: string; operationId: string }) => Promise<{
+        noteText: string | null;
+        updatedAt: Date | null;
+      }>;
+    };
   };
   invitations: {
     createOrgInvite: {

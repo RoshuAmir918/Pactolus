@@ -8,6 +8,7 @@ export * from "./operations/runs";
 export * from "./operations/runOperations";
 export * from "./operations/runPipelineContext";
 export * from "./operations/runStepCaptures"; // exports runOperationCaptures
+export * from "./operations/runOperationNotes";
 export * from "./context";
 export * from "./excel";
 export * from "./storage";

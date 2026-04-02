@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Save,
   CircleDot,
@@ -10,6 +10,8 @@ import {
   ScanSearch,
   Hash,
   Calendar,
+  NotebookPen,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc-client";
@@ -176,6 +178,10 @@ export function NodeDetailPanel({ runId, stepId }: Props) {
   const [op, setOp] = useState<Operation | null>(null);
   const [captures, setCaptures] = useState<Capture[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [note, setNote] = useState<string>("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+  const noteDirtyRef = useRef(false);
 
   // Load the operation details
   useEffect(() => {
@@ -199,6 +205,49 @@ export function NodeDetailPanel({ runId, stepId }: Props) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [runId, stepId]);
+
+  // Load note — seed from saved note, fall back to narrative capture if note is empty
+  useEffect(() => {
+    let cancelled = false;
+    setNote("");
+    setNoteSaved(false);
+    noteDirtyRef.current = false;
+
+    trpc.operations.getOperationNote
+      .query({ runId, operationId: stepId })
+      .then(({ noteText }) => {
+        if (cancelled) return;
+        if (noteText) {
+          setNote(noteText);
+        } else {
+          // No saved note yet — seed from the narrative capture written at save time
+          trpc.operations.getOperationCaptures
+            .query({ runId, operationId: stepId })
+            .then(({ captures }) => {
+              if (cancelled) return;
+              const narrative = captures.find((c) => c.captureType === "narrative");
+              const text = (narrative?.payloadJson as { text?: string } | null)?.text ?? "";
+              setNote(text);
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [runId, stepId]);
+
+  async function saveNote() {
+    setNoteSaving(true);
+    try {
+      await trpc.operations.setOperationNote.mutate({ runId, operationId: stepId, noteText: note });
+      noteDirtyRef.current = false;
+      setNoteSaved(true);
+      setTimeout(() => setNoteSaved(false), 2000);
+    } finally {
+      setNoteSaving(false);
+    }
+  }
 
   const params = op?.parametersJson as Record<string, unknown> | null;
 
@@ -250,6 +299,46 @@ export function NodeDetailPanel({ runId, stepId }: Props) {
             </div>
           </div>
         )}
+
+        {/* Analyst note */}
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <NotebookPen className="w-3.5 h-3.5" />
+            <span>Analyst Note</span>
+          </div>
+          <textarea
+            value={note}
+            onChange={(e) => { setNote(e.target.value); noteDirtyRef.current = true; setNoteSaved(false); }}
+            placeholder="Add a note about this scenario…"
+            rows={3}
+            className={cn(
+              "w-full resize-none rounded-md border border-border/50 bg-muted/20 px-3 py-2",
+              "text-sm text-foreground placeholder:text-muted-foreground/60",
+              "focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring",
+              "transition-colors",
+            )}
+          />
+          <div className="flex items-center justify-end gap-2">
+            {noteSaved && (
+              <span className="flex items-center gap-1 text-[11px] text-emerald-600">
+                <Check className="w-3 h-3" /> Saved
+              </span>
+            )}
+            <button
+              onClick={saveNote}
+              disabled={noteSaving}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50",
+              )}
+            >
+              {noteSaving
+                ? <Loader2 className="w-3 h-3 animate-spin" />
+                : <Save className="w-3 h-3" />}
+              Save Note
+            </button>
+          </div>
+        </div>
 
         <div className="border-t border-border" />
 

@@ -32,7 +32,7 @@ import {
   snapshotIdAtom,
   statusAtom,
 } from "@/features/session/atoms";
-import { getWorkbookBlob, captureAllSheetSlices, readOutputRegionValues, selectRange, WORKBOOK_CONTENT_TYPE } from "@/lib/office/worksheet";
+import { getWorkbookBlob, captureAllSheetSlices, readAllRegionValues, getWorkbookName, selectRange, WORKBOOK_CONTENT_TYPE } from "@/lib/office/worksheet";
 import { getCachedDownloadUrl, setCachedDownloadUrl } from "@/lib/api/downloadCache";
 import type { RunSession } from "@/features/types";
 import type { SaveContext } from "@/pages-react/workspace/types";
@@ -393,6 +393,7 @@ export default function App() {
     }
 
     // 2. Append the operation
+    const workbookName = await getWorkbookName().catch(() => null);
     let newOperationId: string | null = null;
     try {
       newOperationId = await appendOperationIfActive({
@@ -402,7 +403,12 @@ export default function App() {
         documentId,
         parentOperationId,
         supersedesOperationId,
-        parametersJson: { savedAt, narrative: narrative.trim() || null, label: narrative.trim().slice(0, 60) || "Saved" },
+        parametersJson: {
+          savedAt,
+          narrative: narrative.trim() || null,
+          label: narrative.trim().slice(0, 60) || "Saved",
+          workbookName,
+        },
       });
       if (newOperationId) {
         mergeRunSession({ currentOperationId: newOperationId });
@@ -428,19 +434,27 @@ export default function App() {
         }
       }
       try {
-        const regionValues = await readOutputRegionValues(detectedRegions);
+        const regionValues = await readAllRegionValues(detectedRegions);
         if (regionValues.length > 0) {
           await client.operations.saveOperationCapture.mutate({
             runId: runIdForCapture,
             runOperationId: newOperationId,
-            captureType: "output_values",
+            captureType: "region_values",
             payloadJson: { regions: regionValues },
-            summaryText: `Output values captured for ${regionValues.length} region(s)`,
+            summaryText: `${regionValues.filter((r) => r.regionType === "input").length} input, ${regionValues.filter((r) => r.regionType === "output").length} output region(s)`,
           });
         }
       } catch {
         // best-effort
       }
+
+      // 4. Generate AI label asynchronously — reload tree when done
+      const finalizeRunId = runIdForCapture;
+      const finalizeOpId = newOperationId;
+      client.operations.generateOperationLabel
+        .mutate({ runId: finalizeRunId, operationId: finalizeOpId })
+        .then(() => onLoadCommittedOperations())
+        .catch(() => {/* label stays as narrative fallback */});
     }
 
     await onLoadCommittedOperations();

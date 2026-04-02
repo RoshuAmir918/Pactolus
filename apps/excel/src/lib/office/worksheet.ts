@@ -250,13 +250,52 @@ export async function captureAllSheetSlices(maxSheets = 6, maxRows = 80): Promis
   });
 }
 
+export async function getWorkbookName(): Promise<string | null> {
+  try {
+    return Excel.run(async (context) => {
+      context.workbook.load("name");
+      await context.sync();
+      return context.workbook.name ?? null;
+    });
+  } catch {
+    return null;
+  }
+}
+
 export type RegionValues = {
   address: string;
   sheetName: string;
+  regionType: "input" | "output";
+  reason?: string;
   values: unknown[][];
 };
 
-export async function readOutputRegionValues(regions: MonitoredRegion[]): Promise<RegionValues[]> {
+/** Reads values from all detected regions (both input and output), preserving reason as a label hint. */
+export async function readAllRegionValues(regions: MonitoredRegion[]): Promise<RegionValues[]> {
+  const relevant = regions.filter((r) => r.address && r.sheetName);
+  if (relevant.length === 0) return [];
+
+  return Excel.run(async (context) => {
+    const fetches: Array<{ region: MonitoredRegion; range: Excel.Range }> = [];
+    for (const region of relevant) {
+      const sheet = context.workbook.worksheets.getItem(region.sheetName!);
+      const range = sheet.getRange(region.address);
+      range.load("values");
+      fetches.push({ region, range });
+    }
+    await context.sync();
+    return fetches.map(({ region, range }) => ({
+      address: region.address,
+      sheetName: region.sheetName!,
+      regionType: region.regionType,
+      reason: region.reason,
+      values: (range.values ?? []) as unknown[][],
+    }));
+  });
+}
+
+/** @deprecated Use readAllRegionValues — kept for any remaining callers. */
+export async function readOutputRegionValues(regions: MonitoredRegion[]): Promise<{ address: string; sheetName: string; values: unknown[][] }[]> {
   const outputRegions = regions.filter(
     (r) => r.regionType === "output" && r.address && r.sheetName,
   );

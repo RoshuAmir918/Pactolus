@@ -116,6 +116,40 @@ export const getOperationCapturesOutputSchema = z.object({
   ),
 });
 
+// ── analyst notes ─────────────────────────────────────────────────────────────
+
+export const setOperationNoteInputSchema = z.object({
+  runId: z.uuid(),
+  operationId: z.uuid(),
+  noteText: z.string(),
+});
+
+export const setOperationNoteOutputSchema = z.object({
+  deleted: z.boolean(),
+  noteText: z.string().nullable(),
+});
+
+export const getOperationNoteInputSchema = z.object({
+  runId: z.uuid(),
+  operationId: z.uuid(),
+});
+
+export const getOperationNoteOutputSchema = z.object({
+  noteText: z.string().nullable(),
+  updatedAt: z.date().nullable(),
+});
+
+// ── label generation ──────────────────────────────────────────────────────────
+
+export const generateOperationLabelInputSchema = z.object({
+  runId: z.uuid(),
+  operationId: z.uuid(),
+});
+
+export const generateOperationLabelOutputSchema = z.object({
+  label: z.string(),
+});
+
 // ── runs listing ──────────────────────────────────────────────────────────────
 
 export const getRunsBySnapshotInputSchema = z.object({
