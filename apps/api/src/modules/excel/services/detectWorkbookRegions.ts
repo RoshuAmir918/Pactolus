@@ -243,28 +243,44 @@ async function callAnthropic(input: {
   messages: unknown[];
   tools: unknown[];
 }): Promise<{ stop_reason: string; content: unknown[] }> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": input.apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
-    },
-    body: JSON.stringify({
-      model: input.model,
-      max_tokens: 2048,
-      system: input.systemPrompt,
-      tools: input.tools,
-      messages: input.messages,
-    }),
+  const body = JSON.stringify({
+    model: input.model,
+    max_tokens: 2048,
+    system: input.systemPrompt,
+    tools: input.tools,
+    messages: input.messages,
   });
 
-  if (!response.ok) {
-    throw new Error(`Anthropic error ${response.status}: ${await response.text()}`);
+  const MAX_RETRIES = 4;
+  let delay = 15_000;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": input.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
+      },
+      body,
+    });
+
+    if (response.status === 429 && attempt < MAX_RETRIES) {
+      const retryAfter = Number(response.headers.get("retry-after") ?? 0) * 1000;
+      await new Promise((r) => setTimeout(r, retryAfter || delay));
+      delay = Math.min(delay * 2, 60_000);
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Anthropic error ${response.status}: ${await response.text()}`);
+    }
+
+    return response.json() as Promise<{ stop_reason: string; content: unknown[] }>;
   }
 
-  return response.json() as Promise<{ stop_reason: string; content: unknown[] }>;
+  throw new Error("Anthropic API rate limit exceeded after retries.");
 }
 
 function buildSystemPrompt(

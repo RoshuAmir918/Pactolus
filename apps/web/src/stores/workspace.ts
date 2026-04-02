@@ -280,6 +280,19 @@ async function fetchWorkspaceOrgsForUser(): Promise<DemoOrg[]> {
   }));
 }
 
+export const reloadWorkspaceAtom = atom(null, async (_get, set) => {
+  set(workspaceLoadStatusAtom, "idle");
+  set(workspaceLoadErrorAtom, null);
+  try {
+    const orgs = await fetchWorkspaceOrgsForUser();
+    set(demoOrgsAtom, orgs);
+    set(workspaceLoadStatusAtom, "ready");
+  } catch (error) {
+    set(workspaceLoadStatusAtom, "error");
+    set(workspaceLoadErrorAtom, error instanceof Error ? error.message : "Failed to load workspace data.");
+  }
+});
+
 export const loadWorkspaceAtom = atom(null, async (get, set) => {
   const status = get(workspaceLoadStatusAtom);
   if (status === "loading") {

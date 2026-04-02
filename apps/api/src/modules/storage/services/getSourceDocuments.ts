@@ -1,4 +1,4 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, isNotNull } from "drizzle-orm";
 import dbClient from "@api/db/client";
 import { documents } from "@db/schema";
 
@@ -11,6 +11,7 @@ export type GetSourceDocumentsInput = {
 
 export type SourceDocumentItem = {
   id: string;
+  fileObjectId: string;
   filename: string;
   fileExtension: string | null;
   documentType: string;
@@ -27,6 +28,7 @@ export async function getSourceDocuments(
   const rows = await db
     .select({
       id: documents.id,
+      fileObjectId: documents.fileObjectId,
       filename: documents.filename,
       fileExtension: documents.fileExtension,
       documentType: documents.documentType,
@@ -38,6 +40,7 @@ export async function getSourceDocuments(
         eq(documents.orgId, input.orgId),
         eq(documents.snapshotId, input.snapshotId),
         ne(documents.documentType, "workbook_tool"),
+        isNotNull(documents.fileObjectId),
       ),
     )
     .orderBy(asc(documents.filename));
@@ -45,6 +48,7 @@ export async function getSourceDocuments(
   return {
     documents: rows.map((r) => ({
       id: r.id,
+      fileObjectId: r.fileObjectId!,
       filename: r.filename,
       fileExtension: r.fileExtension,
       documentType: r.documentType,

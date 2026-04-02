@@ -66,6 +66,7 @@ export const getSourceDocumentsOutputSchema = z.object({
   documents: z.array(
     z.object({
       id: z.uuid(),
+      fileObjectId: z.uuid(),
       filename: z.string(),
       fileExtension: z.string().nullable(),
       documentType: z.string(),

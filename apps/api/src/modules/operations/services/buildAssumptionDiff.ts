@@ -86,8 +86,8 @@ function replayAssumptionState(steps: RunStep[]): Map<string, AssumptionStateVal
   const state = new Map<string, AssumptionStateValue>();
 
   for (const step of steps) {
-    if (step.stepType !== "assumption_set" && step.stepType !== "assumption_update") {
-      if (step.stepType === "assumption_unset") {
+    if (step.operationType !== "assumption_set" && step.operationType !== "assumption_update") {
+      if (step.operationType === "assumption_unset") {
         const payload = toRecord(step.parametersJson);
         const assumptionKey = toNonEmptyString(payload.assumptionKey);
         if (assumptionKey) {

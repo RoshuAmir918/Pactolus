@@ -5,9 +5,9 @@ export * from "./memberships";
 export * from "./organizationInvitations";
 export * from "./snapshots";
 export * from "./operations/runs";
-export * from "./operations/runBranches";
 export * from "./operations/runOperations";
-export * from "./operations/runOperationArtifacts";
+export * from "./operations/runPipelineContext";
+export * from "./operations/runStepCaptures"; // exports runOperationCaptures
 export * from "./context";
 export * from "./excel";
 export * from "./storage";

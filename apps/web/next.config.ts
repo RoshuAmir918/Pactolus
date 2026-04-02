@@ -8,11 +8,25 @@ const apiProxyTarget =
 const monorepoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 const nextConfig: NextConfig = {
+  transpilePackages: ["@univerjs/presets", "@univerjs/preset-sheets-core"],
   outputFileTracingRoot: monorepoRoot,
   turbopack: {
     root: monorepoRoot,
   },
   reactCompiler: true,
+  webpack(config) {
+    // ExcelJS uses Node.js built-ins; stub them out for browser bundles
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      stream: false,
+      path: false,
+      crypto: false,
+      zlib: false,
+      buffer: false,
+    };
+    return config;
+  },
   async rewrites() {
     return [
       {

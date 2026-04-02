@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { mappingProposalSchema, type MappingRule } from "@db/schema/mappingSchema";
-import { appendRunStep, insertRunStepArtifact } from "@db/schema/operations/runHistory";
+import { appendRunOperation } from "@db/schema/operations/runHistory";
 import {
   claimsCanonical,
   ingestionErrors,
@@ -131,7 +131,7 @@ export async function canonicalizeActivity(
         eq(runOperations.id, input.acceptedMappingStepId),
         eq(runOperations.runId, input.runId),
         eq(runOperations.snapshotInputId, input.snapshotInputId),
-        eq(runOperations.stepType, "ACCEPTED_MAPPING"),
+        eq(runOperations.operationType, "ACCEPTED_MAPPING"),
       ),
     )
     .limit(1);
@@ -155,15 +155,15 @@ export async function canonicalizeActivity(
       and(
         eq(runOperations.runId, input.runId),
         eq(runOperations.snapshotInputId, input.snapshotInputId),
-        eq(runOperations.stepType, canonicalizationStepType),
-        eq(runOperations.supersedesStepId, input.acceptedMappingStepId),
+        eq(runOperations.operationType, canonicalizationStepType),
+        eq(runOperations.supersedesOperationId, input.acceptedMappingStepId),
       ),
     )
     .limit(1);
 
   const canonicalizationStep =
     existingCanonicalizationStep ??
-    (await appendRunStep(db, {
+    (await appendRunOperation(db, {
       runId: input.runId,
       snapshotInputId: input.snapshotInputId,
       stepType: canonicalizationStepType,
@@ -349,9 +349,9 @@ export async function canonicalizeActivity(
       .where(eq(runs.id, input.runId));
   });
 
-  await insertRunStepArtifact(db, {
+  await insertRunPipelineContext(db, {
     runStepId: canonicalizationStep.id,
-    artifactType: "CANONICALIZATION_SUMMARY",
+    contextType: "CANONICALIZATION_SUMMARY",
     dataJson: {
       canonicalRowsWritten:
         input.entityType === "claim" ? claimInserts.length : policyInserts.length,
