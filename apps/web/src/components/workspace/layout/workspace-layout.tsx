@@ -8,9 +8,7 @@ import { useWorkspaceBootstrap } from "@/hooks/use-workspace-bootstrap";
 type WorkspaceLayoutProps = {
   /** Main content to the right of the sidebar */
   children: React.ReactNode;
-  /** Optional title shown in the top bar next to the sidebar trigger */
-  title?: string;
-  /** Optional actions (e.g. "Home" link) shown in the top bar */
+  /** Optional controls to the right of the sidebar trigger in the top bar */
   headerActions?: React.ReactNode;
 };
 
@@ -20,7 +18,6 @@ type WorkspaceLayoutProps = {
  */
 export function WorkspaceLayout({
   children,
-  title = "Workspace",
   headerActions,
 }: WorkspaceLayoutProps) {
   useWorkspaceBootstrap();
@@ -28,9 +25,7 @@ export function WorkspaceLayout({
   return (
     <SidebarProvider>
       <WorkspaceSidebar />
-      <WorkspaceContentArea title={title} headerActions={headerActions}>
-        {children}
-      </WorkspaceContentArea>
+      <WorkspaceContentArea headerActions={headerActions}>{children}</WorkspaceContentArea>
     </SidebarProvider>
   );
 }

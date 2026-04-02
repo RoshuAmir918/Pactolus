@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import dbClient from "@api/db/client";
 import { organizationInvitations, organizations } from "@db/schema";
 
@@ -10,6 +10,7 @@ export type InvitationInfoResult =
       organizationName: string;
       inviteEmail: string;
       expiresAt: Date;
+      organizationStatus: "pending" | "active" | "inactive" | "archived";
     }
   | {
       valid: false;
@@ -29,10 +30,11 @@ export async function getInvitationInfo(token: string): Promise<InvitationInfoRe
       expiresAt: organizationInvitations.expiresAt,
       usedAt: organizationInvitations.usedAt,
       organizationName: organizations.name,
+      organizationStatus: organizations.status,
     })
     .from(organizationInvitations)
     .innerJoin(organizations, eq(organizations.id, organizationInvitations.orgId))
-    .where(and(eq(organizationInvitations.token, normalizedToken)))
+    .where(eq(organizationInvitations.token, normalizedToken))
     .limit(1);
 
   if (!invitation) {
@@ -52,5 +54,6 @@ export async function getInvitationInfo(token: string): Promise<InvitationInfoRe
     organizationName: invitation.organizationName,
     inviteEmail: invitation.email,
     expiresAt: invitation.expiresAt,
+    organizationStatus: invitation.organizationStatus,
   };
 }

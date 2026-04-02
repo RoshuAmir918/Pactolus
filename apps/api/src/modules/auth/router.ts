@@ -29,6 +29,8 @@ export const authRouter = router({
                         orgId: user.orgId,
                         role: user.role,
                         isSuperUser: user.isSuperUser,
+                        email: user.email,
+                        fullName: user.fullName,
                     },
                 };
             } catch (error) {

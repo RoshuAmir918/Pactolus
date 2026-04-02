@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { JotaiProvider } from "@/providers/jotai-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
-import { ThemeToggle } from "@/components/theme-toggle";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -44,12 +43,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <JotaiProvider>
-          <ThemeProvider>
-            <div className="fixed right-4 top-4 z-50">
-              <ThemeToggle />
-            </div>
-            {children}
-          </ThemeProvider>
+          <ThemeProvider>{children}</ThemeProvider>
         </JotaiProvider>
       </body>
     </html>

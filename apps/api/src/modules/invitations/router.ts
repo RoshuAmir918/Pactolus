@@ -1,4 +1,9 @@
-import { publicProcedure, router, superUserProcedure } from "@api/trpc/base";
+import {
+  authenticatedProcedure,
+  publicProcedure,
+  router,
+  superUserProcedure,
+} from "@api/trpc/base";
 import {
   acceptOrganizationInvitation,
   type AcceptOrganizationInvitationResult,
@@ -9,6 +14,7 @@ import {
   type InvitationInfoResult,
 } from "./services/getInvitationInfo";
 import { sendInviteEmail } from "./services/sendInviteEmail";
+import { joinOrganizationWithToken } from "./services/joinOrganizationWithToken";
 import {
   acceptOrganizationInvitationInputSchema,
   acceptOrganizationInvitationOutputSchema,
@@ -16,6 +22,8 @@ import {
   createOrgInviteOutputSchema,
   getInvitationInfoInputSchema,
   getInvitationInfoOutputSchema,
+  joinOrgWithTokenInputSchema,
+  joinOrgWithTokenOutputSchema,
 } from "./schemas";
 
 export type CreateOrgInviteResult = {
@@ -65,6 +73,17 @@ export const invitationsRouter = router({
         token: input.token,
         fullName: input.fullName,
         password: input.password,
+      }),
+    ),
+
+  joinWithToken: authenticatedProcedure
+    .input(joinOrgWithTokenInputSchema)
+    .output(joinOrgWithTokenOutputSchema)
+    .mutation(async ({ ctx, input }) =>
+      joinOrganizationWithToken({
+        req: ctx.req,
+        userId: ctx.userId,
+        token: input.token,
       }),
     ),
 });

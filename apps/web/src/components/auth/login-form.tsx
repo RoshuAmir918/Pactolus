@@ -16,7 +16,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export function LoginForm() {
+type LoginFormProps = {
+  /** Safe in-app path after login (e.g. return to invite accept). */
+  redirectTo?: string | null;
+};
+
+export function LoginForm({ redirectTo }: LoginFormProps) {
   const setUser = useSetAtom(authUserAtom);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,7 +35,7 @@ export function LoginForm() {
     try {
       const user = await login(email, password);
       setUser(user);
-      window.location.href = "/";
+      window.location.href = redirectTo ?? "/";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

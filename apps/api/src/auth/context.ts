@@ -10,6 +10,8 @@ export type RequestContext = {
     orgId: string;
     role: "admin" | "manager" | "analyst";
     isSuperUser: boolean;
+    email: string;
+    fullName: string;
 };
 
 /** tRPC context: req, res, and optional user (null when not authenticated). */
@@ -31,11 +33,22 @@ function getHeader(
 /** Returns the current user from session or headers, or null if not authenticated. */
 export async function resolveContextOptional(req: Request): Promise<RequestContext | null> {
     if (req.isAuthenticated() && req.user) {
+        const sessionUser = req.user;
+
+        // Profile fields always come from DB so stale sessions (wrong or missing fullName) stay correct.
+        const [profile] = await db
+            .select({ email: users.email, fullName: users.fullName })
+            .from(users)
+            .where(eq(users.id, sessionUser.userId))
+            .limit(1);
+
         return {
-            userId: req.user.userId,
-            orgId: req.user.orgId,
-            role: req.user.role,
-            isSuperUser: req.user.isSuperUser,
+            userId: sessionUser.userId,
+            orgId: sessionUser.orgId,
+            role: sessionUser.role,
+            isSuperUser: sessionUser.isSuperUser,
+            email: profile?.email ?? sessionUser.email ?? "",
+            fullName: profile?.fullName ?? sessionUser.fullName ?? "",
         };
     }
 
@@ -52,6 +65,8 @@ export async function resolveContextOptional(req: Request): Promise<RequestConte
             role: memberships.role,
             status: memberships.status,
             isSuperUser: users.isSuperUser,
+            email: users.email,
+            fullName: users.fullName,
         })
         .from(memberships)
         .innerJoin(users, eq(users.id, memberships.userId))
@@ -71,6 +86,8 @@ export async function resolveContextOptional(req: Request): Promise<RequestConte
         orgId: membership.orgId,
         role: membership.role,
         isSuperUser: membership.isSuperUser,
+        email: membership.email,
+        fullName: membership.fullName,
     };
 }
 

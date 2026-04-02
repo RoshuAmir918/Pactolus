@@ -17,16 +17,18 @@ function isBoolean(value: unknown): value is boolean {
 
 function parseAuthUser(data: unknown): AuthUser | null {
   if (!isPlainObject(data)) return null;
-  const { userId, orgId, role, isSuperUser } = data;
+  const { userId, orgId, role, isSuperUser, email, fullName } = data;
   if (
     !isNonEmptyString(userId) ||
     !isNonEmptyString(orgId) ||
     !isNonEmptyString(role) ||
-    !isBoolean(isSuperUser)
+    !isBoolean(isSuperUser) ||
+    !isNonEmptyString(email) ||
+    !isNonEmptyString(fullName)
   ) {
     return null;
   }
-  return { userId, orgId, role, isSuperUser };
+  return { userId, orgId, role, isSuperUser, email, fullName };
 }
 
 const getApiUrl = () =>

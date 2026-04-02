@@ -1,5 +1,12 @@
 /** Minimal client-side tRPC types (avoids importing API router). */
-export type AuthUser = { userId: string; orgId: string; role: string; isSuperUser: boolean };
+export type AuthUser = {
+  userId: string;
+  orgId: string;
+  role: string;
+  isSuperUser: boolean;
+  email: string;
+  fullName: string;
+};
 
 export type AuthTRPC = {
   auth: {
@@ -156,6 +163,7 @@ export type AuthTRPC = {
             organizationName: string;
             inviteEmail: string;
             expiresAt: Date;
+            organizationStatus: "pending" | "active" | "inactive" | "archived";
           }
         | {
             valid: false;
@@ -173,6 +181,55 @@ export type AuthTRPC = {
         organizationName: string;
         inviteEmail: string;
       }>;
+    };
+    joinWithToken: {
+      mutate: (input: { token: string }) => Promise<{
+        ok: true;
+        organizationName: string;
+        inviteEmail: string;
+      }>;
+    };
+  };
+  settings: {
+    members: {
+      list: {
+        query: () => Promise<{
+          members: Array<{
+            membershipId: string;
+            userId: string;
+            email: string;
+            fullName: string;
+            role: "admin" | "manager" | "analyst";
+            status: "active" | "invited" | "suspended";
+            joinedAt: Date | null;
+          }>;
+          pendingInvites: Array<{
+            id: string;
+            email: string;
+            role: "admin" | "manager" | "analyst";
+            expiresAt: Date;
+            invitedAt: Date;
+          }>;
+        }>;
+      };
+      invite: {
+        mutate: (input: {
+          inviteEmail: string;
+          role?: "admin" | "manager" | "analyst";
+        }) => Promise<{ inviteEmail: string; expiresAt: Date }>;
+      };
+      cancelInvite: {
+        mutate: (input: { invitationId: string }) => Promise<void>;
+      };
+      remove: {
+        mutate: (input: { targetUserId: string }) => Promise<void>;
+      };
+      updateRole: {
+        mutate: (input: {
+          targetUserId: string;
+          role: "admin" | "manager" | "analyst";
+        }) => Promise<void>;
+      };
     };
   };
 };

@@ -43,6 +43,7 @@ export async function acceptOrganizationInvitation(
       expiresAt: organizationInvitations.expiresAt,
       usedAt: organizationInvitations.usedAt,
       organizationName: organizations.name,
+      organizationStatus: organizations.status,
     })
     .from(organizationInvitations)
     .innerJoin(organizations, eq(organizations.id, organizationInvitations.orgId))
@@ -60,6 +61,7 @@ export async function acceptOrganizationInvitation(
   }
 
   const normalizedEmail = invitation.email.trim().toLowerCase();
+  const orgIsPending = invitation.organizationStatus === "pending";
 
   const [existingUser] = await db
     .select({ id: users.id })
@@ -68,9 +70,16 @@ export async function acceptOrganizationInvitation(
     .limit(1);
 
   if (existingUser) {
+    if (orgIsPending) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "An account with this invite email already exists",
+      });
+    }
     throw new TRPCError({
       code: "CONFLICT",
-      message: "An account with this invite email already exists",
+      message:
+        "An account with this email already exists. Log in with that account and open this invite link again to join.",
     });
   }
 
@@ -113,13 +122,15 @@ export async function acceptOrganizationInvitation(
         ),
       );
 
-    await tx
-      .update(organizations)
-      .set({
-        status: "active",
-        updatedAt: now,
-      })
-      .where(eq(organizations.id, invitation.orgId));
+    if (orgIsPending) {
+      await tx
+        .update(organizations)
+        .set({
+          status: "active",
+          updatedAt: now,
+        })
+        .where(eq(organizations.id, invitation.orgId));
+    }
   });
 
   return {

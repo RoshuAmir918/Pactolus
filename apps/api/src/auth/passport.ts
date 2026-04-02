@@ -12,6 +12,8 @@ export type SessionUser = {
   orgId: string;
   role: "admin" | "manager" | "analyst";
   isSuperUser: boolean;
+  email: string;
+  fullName: string;
 };
 
 declare global {
@@ -70,6 +72,8 @@ passport.use(
           orgId: membership.orgId,
           role: membership.role,
           isSuperUser: user.isSuperUser,
+          email: user.email,
+          fullName: user.fullName,
         });
       } catch (err) {
         done(err);

@@ -16,11 +16,19 @@ export const getInvitationInfoInputSchema = z.object({
   token: z.string().trim().min(1),
 });
 
+const organizationStatusSchema = z.enum([
+  "pending",
+  "active",
+  "inactive",
+  "archived",
+]);
+
 const getInvitationInfoValidOutputSchema = z.object({
   valid: z.literal(true),
   organizationName: z.string(),
   inviteEmail: z.string().email(),
   expiresAt: z.date(),
+  organizationStatus: organizationStatusSchema,
 });
 
 const getInvitationInfoInvalidOutputSchema = z.object({
@@ -40,6 +48,16 @@ export const acceptOrganizationInvitationInputSchema = z.object({
 });
 
 export const acceptOrganizationInvitationOutputSchema = z.object({
+  ok: z.literal(true),
+  organizationName: z.string(),
+  inviteEmail: z.string().email(),
+});
+
+export const joinOrgWithTokenInputSchema = z.object({
+  token: z.string().trim().min(1),
+});
+
+export const joinOrgWithTokenOutputSchema = z.object({
   ok: z.literal(true),
   organizationName: z.string(),
   inviteEmail: z.string().email(),

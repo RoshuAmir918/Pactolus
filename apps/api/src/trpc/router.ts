@@ -9,11 +9,13 @@ import { contextRouter } from "@api/modules/context/router";
 import { excelRouter } from "@api/modules/excel/router";
 import { storageRouter } from "@api/modules/storage/router";
 import { chatRouter } from "@api/modules/chat/router";
+import { settingsRouter } from "@api/modules/settings/router";
 
 export const appRouter = router({
   auth: authRouter,
   invitations: invitationsRouter,
   organizations: organizationsRouter,
+  settings: settingsRouter,
   ingestion: ingestionRouter,
   operations: operationsRouter,
   context: contextRouter,

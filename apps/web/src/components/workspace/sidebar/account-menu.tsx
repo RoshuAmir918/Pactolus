@@ -1,19 +1,14 @@
+"use client";
+
 import { useState } from "react";
-import {
-  Bell,
-  ChevronsUpDown,
-  CreditCard,
-  LogOut,
-  Sparkles,
-  User,
-} from "lucide-react";
+import Link from "next/link";
+import { Bell, ChevronsUpDown, LogOut, Settings } from "lucide-react";
 
+import { ThemeToggleMenuItem } from "@/components/theme-toggle";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-
-const DEMO_USER = {
-  name: "Alex Doe",
-  email: "alex@example.com",
-};
+import { cn } from "@/lib/utils";
+import { logout } from "@/lib/auth-client";
+import { useSidebarAccountProfile } from "@/hooks/use-sidebar-account-profile";
 
 function getInitial(name: string) {
   return name.trim().charAt(0).toUpperCase() || "?";
@@ -21,6 +16,13 @@ function getInitial(name: string) {
 
 export function AccountMenu() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const { displayName, displayEmail, setUser } = useSidebarAccountProfile();
+
+  async function handleLogout() {
+    await logout();
+    setUser(null);
+    window.location.href = "/";
+  }
 
   return (
     <div className="mt-auto border-t border-sidebar-border px-2 py-2">
@@ -31,12 +33,12 @@ export function AccountMenu() {
             className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             <div className="flex size-7 items-center justify-center rounded-full bg-sidebar-primary/80 text-xs font-semibold text-sidebar-primary-foreground">
-              {getInitial(DEMO_USER.name)}
+              {getInitial(displayName)}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-medium">{DEMO_USER.name}</div>
+              <div className="truncate text-xs font-medium">{displayName}</div>
               <div className="truncate text-[11px] text-muted-foreground">
-                {DEMO_USER.email}
+                {displayEmail}
               </div>
             </div>
             <ChevronsUpDown className="size-4 text-muted-foreground" />
@@ -50,34 +52,42 @@ export function AccountMenu() {
         >
           <div className="flex cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm">
             <div className="flex size-8 items-center justify-center rounded-full bg-sidebar-primary/80 text-sm font-semibold text-sidebar-primary-foreground">
-              {getInitial(DEMO_USER.name)}
+              {getInitial(displayName)}
             </div>
             <div className="min-w-0">
-              <div className="truncate text-xs font-medium">{DEMO_USER.name}</div>
+              <div className="truncate text-xs font-medium">{displayName}</div>
               <div className="truncate text-[11px] text-muted-foreground">
-                {DEMO_USER.email}
+                {displayEmail}
               </div>
             </div>
           </div>
           <div className="my-1 h-px bg-border" />
-          <button className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground">
-            <Sparkles className="size-3.5" />
-            <span>Upgrade to Pro</span>
-          </button>
-          <button className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground">
-            <User className="size-3.5" />
-            <span>Account</span>
-          </button>
-          <button className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground">
-            <CreditCard className="size-3.5" />
-            <span>Billing</span>
-          </button>
-          <button className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground">
+          <Link
+            href="/settings/overview"
+            onClick={() => setAccountMenuOpen(false)}
+            className={cn(
+              "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground",
+            )}
+          >
+            <Settings className="size-3.5" />
+            <span>Settings</span>
+          </Link>
+          <ThemeToggleMenuItem />
+          <button
+            type="button"
+            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent hover:text-accent-foreground"
+          >
             <Bell className="size-3.5" />
             <span>Notifications</span>
           </button>
           <div className="my-1 h-px bg-border" />
-          <button className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-red-500 hover:bg-accent/60 hover:text-red-500">
+          <button
+            type="button"
+            onClick={() => {
+              void handleLogout();
+            }}
+            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-xs text-red-500 hover:bg-accent/60 hover:text-red-500"
+          >
             <LogOut className="size-3.5" />
             <span>Log out</span>
           </button>
