@@ -1,26 +1,3 @@
-export type Snapshot = {
-  workbookName: string;
-  sheetName: string;
-  selectedAddress: string;
-  rowCount: number;
-  columnCount: number;
-  headers: string[];
-  sampleRows: string[][];
-};
-
-export type Suggestion = {
-  value: string;
-  reason: string;
-  confidence: number;
-};
-
-export type LiveHintSuggestion = {
-  sourceColumn: string;
-  confidence: number;
-  sourceContextDocumentId: string;
-  matchMethod: "exact" | "substring" | "token_overlap" | "semantic_ai";
-};
-
 export type MonitoredRegion = {
   id?: string;
   snapshotId?: string;
@@ -95,4 +72,5 @@ export type OperationRecord = {
   supersedesOperationId: string | null;
   documentId: string | null;
   createdAt: Date | null;
+  authorName: string | null;
 };

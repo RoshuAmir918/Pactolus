@@ -7,7 +7,7 @@ export interface TreeNode {
   meta: string;
   tone: NodeTone;
   parent: string | null;
-  branchId?: string;
+  branchRootId?: string;
   documentId?: string;
   children: TreeNode[];
   lx: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from "react-resizable-panels";
 import { useAtom } from "jotai";
 import { MessageSquare, GitBranch } from "lucide-react";
@@ -9,8 +9,10 @@ import { LeftSidebar } from "@/components/workspace/sidebar/left-sidebar";
 import { CenterPanel } from "@/components/workspace/content/center-panel";
 import { BottomRunTree } from "@/components/workspace/panels/bottom-run-tree";
 import { RightChatPanel } from "@/components/workspace/panels/right-chat-panel";
-import { rightPanelOpenAtom, bottomPanelOpenAtom } from "@/stores/workspace-ui";
+import { DocumentPreview, type PreviewDoc } from "@/components/workspace/document-preview";
+import { rightPanelOpenAtom, bottomPanelOpenAtom, activeDocumentIdAtom } from "@/stores/workspace-ui";
 import { useWorkspaceBootstrap } from "@/hooks/use-workspace-bootstrap";
+import { trpc } from "@/lib/trpc-client";
 import { cn } from "@/lib/utils";
 
 const LAYOUT = {
@@ -33,6 +35,15 @@ export function WorkspaceLayout() {
   const [rightPanelOpen, setRightPanelOpen] = useAtom(rightPanelOpenAtom);
   const [bottomPanelOpen, setBottomPanelOpen] = useAtom(bottomPanelOpenAtom);
   const [chatWidth, setChatWidth] = React.useState<number>(LAYOUT.chatPanel.defaultWidth);
+  const [activeDocumentId, setActiveDocumentId] = useAtom(activeDocumentIdAtom);
+  const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
+
+  useEffect(() => {
+    if (!activeDocumentId) { setPreviewDoc(null); return; }
+    trpc.storage.getDocumentById.query({ documentId: activeDocumentId }).then((doc) => {
+      if (doc) setPreviewDoc({ id: doc.id, fileObjectId: doc.fileObjectId, name: doc.filename, sizeBytes: doc.fileSizeBytes });
+    }).catch(() => setActiveDocumentId(null));
+  }, [activeDocumentId, setActiveDocumentId]);
 
   const handleChatResizeStart = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -63,6 +74,7 @@ export function WorkspaceLayout() {
   }, [chatWidth]);
 
   return (
+    <>
     <SidebarProvider style={{ "--sidebar-width": LAYOUT.sidebarWidth } as React.CSSProperties}>
       <div style={{ display: "flex", height: "100vh", width: "100%", overflow: "hidden" }} className="bg-background">
         <LeftSidebar />
@@ -147,5 +159,13 @@ export function WorkspaceLayout() {
         </div>
       </div>
     </SidebarProvider>
+
+    {previewDoc && (
+      <DocumentPreview
+        doc={previewDoc}
+        onClose={() => { setPreviewDoc(null); setActiveDocumentId(null); }}
+      />
+    )}
+    </>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { FileSpreadsheet, FileText, RefreshCw } from "lucide-react";
+import { ExternalLink, FileSpreadsheet, FileText, RefreshCw, User, Clock } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,36 +12,76 @@ import { allNodes, withSkeletons } from "../tree/layout";
 
 function OperationCard(props: {
   operation: OperationRecord;
-  onOpenWorkbook: (documentId: string) => void;
+  runId: string | undefined;
+  clientId: string | undefined;
+  snapshotId: string | undefined;
+  webUrl: string | undefined;
   onUpdate: () => void;
 }) {
   const params = props.operation.parametersJson as { label?: string; narrative?: string } | null;
+  const author = props.operation.authorName;
+  const savedAt = props.operation.createdAt
+    ? new Date(props.operation.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+    : null;
+
+  function openOnWeb() {
+    if (!props.webUrl || !props.runId) return;
+    const base = props.webUrl.replace(/\/$/, "");
+    const params = new URLSearchParams({
+      ...(props.clientId ? { clientId: props.clientId } : {}),
+      ...(props.snapshotId ? { snapshotId: props.snapshotId } : {}),
+      runId: props.runId,
+      nodeId: props.operation.id,
+    });
+    Office.context.ui.openBrowserWindow(`${base}/workspace?${params.toString()}`);
+  }
+
   return (
     <div className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 flex flex-col gap-2">
+      {/* Label + index */}
       <div className="flex items-start justify-between gap-2">
-        <div className="flex flex-col gap-0.5 min-w-0">
-          <span className="text-[11px] font-medium text-foreground truncate">
-            {params?.label ?? "Saved"}
-          </span>
-          {params?.narrative && (
-            <span className="text-[10px] text-muted-foreground leading-snug">{params.narrative}</span>
-          )}
-        </div>
+        <span className="text-[11px] font-semibold text-foreground truncate">
+          {params?.label ?? "Saved"}
+        </span>
         <span className="text-[8px] text-muted-foreground font-mono flex-shrink-0 mt-0.5">
           #{props.operation.operationIndex}
         </span>
       </div>
-      <div className="flex gap-1.5">
-        {props.operation.documentId && (
-          <button
-            type="button"
-            onClick={() => props.onOpenWorkbook(props.operation.documentId!)}
-            className="flex-1 h-7 text-[10px] rounded-lg border border-border bg-background hover:bg-muted transition-colors font-medium text-foreground flex items-center justify-center gap-1.5"
-          >
-            <FileSpreadsheet className="size-3 text-emerald-600" />
-            View snapshot
-          </button>
+
+      {/* Author + date */}
+      <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+        {author && (
+          <span className="flex items-center gap-1">
+            <User className="size-2.5" />
+            {author}
+          </span>
         )}
+        {savedAt && (
+          <span className="flex items-center gap-1">
+            <Clock className="size-2.5" />
+            {savedAt}
+          </span>
+        )}
+      </div>
+
+      {/* Narrative */}
+      {params?.narrative && (
+        <p className="text-[10px] text-muted-foreground leading-snug border-l-2 border-border pl-2">
+          {params.narrative}
+        </p>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={openOnWeb}
+          disabled={!props.webUrl || !props.runId}
+          className="flex-1 h-7 text-[10px] rounded-lg border border-border bg-background hover:bg-muted transition-colors font-medium text-foreground flex items-center justify-center gap-1.5 disabled:opacity-40"
+        >
+          <ExternalLink className="size-3 text-blue-500" />
+          View on web
+        </button>
         <button
           type="button"
           onClick={props.onUpdate}
@@ -104,8 +144,9 @@ export function RunsPanel(props: {
   onSelectRegion: (sheetName: string | undefined, address: string) => Promise<void>;
   onSaveScenario: (narrative: string, context: SaveContext) => Promise<void>;
   onSelectNode: (id: string) => void;
-  onOpenWorkbook: (documentId: string) => void;
-  onOpenDocument: (documentId: string, fileExtension: string | null) => void;
+  clientId?: string;
+  snapshotId?: string;
+  webUrl?: string;
 }) {
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -194,13 +235,26 @@ export function RunsPanel(props: {
               const isPdf = doc.fileExtension?.toLowerCase() === "pdf";
               const Icon = isPdf ? FileText : FileSpreadsheet;
               const label = doc.filename.replace(/\.[^.]+$/, "");
+
+              function openDocOnWeb() {
+                if (!props.webUrl || !props.clientId || !props.snapshotId) return;
+                const base = props.webUrl.replace(/\/$/, "");
+                const params = new URLSearchParams({
+                  documentId: doc.id,
+                  snapshotId: props.snapshotId,
+                  clientId: props.clientId,
+                });
+                Office.context.ui.openBrowserWindow(`${base}/workspace?${params.toString()}`);
+              }
+
               return (
                 <button
                   key={doc.id}
                   type="button"
                   title={doc.filename}
-                  onClick={() => props.onOpenDocument(doc.id, doc.fileExtension)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-background hover:bg-muted transition-colors text-left max-w-[calc(25%-3px)] min-w-0"
+                  onClick={openDocOnWeb}
+                  disabled={!props.webUrl || !props.clientId || !props.snapshotId}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-background hover:bg-muted transition-colors text-left max-w-[calc(25%-3px)] min-w-0 disabled:opacity-40"
                 >
                   <Icon className={cn("size-2.5 shrink-0", isPdf ? "text-slate-500" : "text-emerald-600")} />
                   <span className="text-[9px] text-foreground truncate">{label}</span>
@@ -222,7 +276,10 @@ export function RunsPanel(props: {
       ) : selectedOp ? (
         <OperationCard
           operation={selectedOp}
-          onOpenWorkbook={props.onOpenWorkbook}
+          runId={props.runId}
+          clientId={props.clientId}
+          snapshotId={props.snapshotId}
+          webUrl={props.webUrl}
           onUpdate={() => handleUpdateNode(selectedOp.id)}
         />
       ) : null}
@@ -300,7 +357,7 @@ export function RunsPanel(props: {
         </p>
         <RunTreeCanvas
           root={decoratedRoot}
-          initialSelectedId="active"
+          initialSelectedId="ingest"
           onSelectNode={handleSelectNode}
         />
       </div>

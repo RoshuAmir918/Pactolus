@@ -75,6 +75,18 @@ export const getSourceDocumentsOutputSchema = z.object({
   ),
 });
 
+export const getDocumentByIdInputSchema = z.object({
+  documentId: z.uuid(),
+});
+
+export const getDocumentByIdOutputSchema = z.object({
+  id: z.uuid(),
+  fileObjectId: z.uuid(),
+  filename: z.string(),
+  fileExtension: z.string().nullable(),
+  fileSizeBytes: z.number(),
+}).nullable();
+
 export const deleteFileInputSchema = z.object({
   fileObjectId: z.uuid(),
 });

@@ -155,6 +155,15 @@ export type AuthTRPC = {
         }>;
       }>;
     };
+    getDocumentById: {
+      query: (input: { documentId: string }) => Promise<{
+        id: string;
+        fileObjectId: string;
+        filename: string;
+        fileExtension: string | null;
+        fileSizeBytes: number;
+      } | null>;
+    };
     deleteFile: {
       mutate: (input: { fileObjectId: string }) => Promise<{
         fileObjectId: string;

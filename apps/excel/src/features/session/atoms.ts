@@ -7,10 +7,8 @@ import type {
   OperationRecord,
   RunOption,
   RunSession,
-  Snapshot,
   SnapshotOption,
   SourceDocument,
-  Suggestion,
   UiPage,
 } from "@/features/types";
 import { emptyRunSession } from "@/features/operations/actions";
@@ -18,6 +16,7 @@ import { emptyRunSession } from "@/features/operations/actions";
 // ── persisted across task pane close ─────────────────────────────────────────
 
 export const apiUrlAtom = atomWithStorage<string>("pactolus:apiUrl", "https://localhost:3001");
+export const webUrlAtom = atomWithStorage<string>("pactolus:webUrl", "http://localhost:3000");
 export const selectedClientIdAtom = atomWithStorage<string>("pactolus:selectedClientId", "");
 export const snapshotIdAtom = atomWithStorage<string>("pactolus:snapshotId", "");
 export const runModeAtom = atomWithStorage<"create" | "select">("pactolus:runMode", "create");
@@ -30,20 +29,17 @@ export const currentPageAtom = atom<UiPage>("auth");
 export const officeReadyAtom = atom<boolean>(false);
 export const authenticatedAtom = atom<boolean>(false);
 export const authEmailAtom = atom<string | null>(null);
+export const authFullNameAtom = atom<string | null>(null);
 export const statusAtom = atom<{ kind: "ok" | "error"; message: string } | null>(null);
 export const isBusyAtom = atom<boolean>(false);
 
-export const latestSnapshotAtom = atom<Snapshot | null>(null);
-export const latestSuggestionAtom = atom<Suggestion | null>(null);
 export const detectedRegionsAtom = atom<MonitoredRegion[]>([]);
-export const monitoredRegionsAtom = atom<MonitoredRegion[]>([]);
 
 export const availableClientsAtom = atom<ClientOption[]>([]);
 export const allSnapshotsAtom = atom<SnapshotOption[]>([]);
 export const availableRunsAtom = atom<RunOption[]>([]);
 export const committedOperationsAtom = atom<OperationRecord[]>([]);
 export const sourceDocumentsAtom = atom<SourceDocument[]>([]);
-export const detectingRegionsAtom = atom<boolean>(false);
 export const chatMessagesAtom = atom<ChatMessage[]>([]);
 
 // ── derived ───────────────────────────────────────────────────────────────────

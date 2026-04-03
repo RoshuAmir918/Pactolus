@@ -14,6 +14,8 @@ export const activeSnapshotIdAtom = atom<string | null>(null);
 export const activeRunIdAtom = atom<string | null>(null);
 export const activeNodeIdAtom = atom<string | null>(null);
 
+export const activeDocumentIdAtom = atom<string | null>(null);
+
 export const rightPanelOpenAtom = atom<boolean>(true);
 export const bottomPanelOpenAtom = atom<boolean>(true);
 

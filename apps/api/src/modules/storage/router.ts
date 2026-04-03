@@ -4,6 +4,8 @@ import {
   completeUploadOutputSchema,
   deleteFileInputSchema,
   deleteFileOutputSchema,
+  getDocumentByIdInputSchema,
+  getDocumentByIdOutputSchema,
   getDownloadUrlByDocumentInputSchema,
   getDownloadUrlInputSchema,
   getDownloadUrlOutputSchema,
@@ -13,6 +15,7 @@ import {
   listBySnapshotOutputSchema,
 } from "./schemas";
 import { completeUpload, type CompleteUploadResult } from "./services/completeUpload";
+import { getDocumentById, type GetDocumentByIdResult } from "./services/getDocumentById";
 import { getDownloadUrl, type GetDownloadUrlResult } from "./services/getDownloadUrl";
 import { getDownloadUrlByDocument } from "./services/getDownloadUrlByDocument";
 import { getUploadUrl, type GetUploadUrlResult } from "./services/getUploadUrl";
@@ -99,6 +102,16 @@ export const storageRouter = router({
       getSourceDocuments({
         orgId: ctx.orgId,
         snapshotId: input.snapshotId,
+      }),
+    ),
+
+  getDocumentById: authenticatedProcedure
+    .input(getDocumentByIdInputSchema)
+    .output(getDocumentByIdOutputSchema)
+    .query(async ({ ctx, input }): Promise<GetDocumentByIdResult | null> =>
+      getDocumentById({
+        orgId: ctx.orgId,
+        documentId: input.documentId,
       }),
     ),
 

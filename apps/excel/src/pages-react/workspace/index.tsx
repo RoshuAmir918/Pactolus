@@ -22,10 +22,11 @@ export function WorkspacePage(props: {
   status: { kind: "ok" | "error"; message: string } | null;
   onBackToRun: () => void;
   onSaveScenario: (narrative: string, context: SaveContext) => Promise<void>;
-  onOpenWorkbook: (documentId: string) => void;
-  onOpenDocument: (documentId: string, fileExtension: string | null) => void;
   onUploadDocument: (file: File) => Promise<void>;
   onAsk?: (text: string, context: { runId: string; selectedRange: string | null; history: ChatMessage[] }) => Promise<{ reply: string; excelAction?: ExcelAction | null }>;
+  clientId?: string;
+  snapshotId?: string;
+  webUrl?: string;
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [messages, setMessages] = useAtom(chatMessagesAtom);
@@ -160,8 +161,9 @@ export function WorkspacePage(props: {
             onSelectRegion={props.onSelectRegion}
             onSaveScenario={props.onSaveScenario}
             onSelectNode={() => {}}
-            onOpenWorkbook={props.onOpenWorkbook}
-            onOpenDocument={props.onOpenDocument}
+            clientId={props.clientId}
+            snapshotId={props.snapshotId}
+            webUrl={props.webUrl}
           />
         )}
       </main>

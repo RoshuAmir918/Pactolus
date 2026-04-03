@@ -10,8 +10,10 @@ import {
 } from "@/features/operations/actions";
 import {
   apiUrlAtom,
+  webUrlAtom,
   authenticatedAtom,
   authEmailAtom,
+  authFullNameAtom,
   authSummaryAtom,
   availableClientsAtom,
   availableRunsAtom,
@@ -33,7 +35,6 @@ import {
   statusAtom,
 } from "@/features/session/atoms";
 import { getWorkbookBlob, captureAllSheetSlices, readAllRegionValues, getWorkbookName, selectRange, WORKBOOK_CONTENT_TYPE } from "@/lib/office/worksheet";
-import { getCachedDownloadUrl, setCachedDownloadUrl } from "@/lib/api/downloadCache";
 import type { RunSession } from "@/features/types";
 import type { SaveContext } from "@/pages-react/workspace/types";
 
@@ -49,8 +50,10 @@ export default function App() {
   // ── ephemeral atoms ──────────────────────────────────────────────────────────
   const [currentPage, setCurrentPage] = useAtom(currentPageAtom);
   const [, setOfficeReady] = useAtom(officeReadyAtom);
+  const [webUrl] = useAtom(webUrlAtom);
   const [authenticated, setAuthenticated] = useAtom(authenticatedAtom);
   const [, setAuthEmail] = useAtom(authEmailAtom);
+  const [authFullName, setAuthFullName] = useAtom(authFullNameAtom);
   const [status, setStatus] = useAtom(statusAtom);
   const [isBusy, setIsBusy] = useAtom(isBusyAtom);
   const [availableClients, setAvailableClients] = useAtom(availableClientsAtom);
@@ -186,9 +189,10 @@ export default function App() {
     try {
       const client = getApiClient(normalizedApiUrl);
       await client.auth.login.mutate({ email: email.trim(), password });
-      await client.auth.me.query();
+      const me = await client.auth.me.query();
       setAuthenticated(true);
       setAuthEmail(email.trim());
+      setAuthFullName((me as { fullName?: string } | null)?.fullName ?? null);
       await loadClientAndSnapshotOptions();
       // restore persisted run selection — silently clear stale IDs (e.g. after DB wipe)
       if (snapshotId) {
@@ -209,6 +213,7 @@ export default function App() {
     } catch (error) {
       setAuthenticated(false);
       setAuthEmail(null);
+      setAuthFullName(null);
       setError(`Login failed: ${formatError(error)}`);
     } finally {
       setIsBusy(false);
@@ -408,6 +413,7 @@ export default function App() {
           narrative: narrative.trim() || null,
           label: narrative.trim().slice(0, 60) || "Saved",
           workbookName,
+          authorName: authFullName ?? null,
         },
       });
       if (newOperationId) {
@@ -489,36 +495,12 @@ export default function App() {
             supersedesOperationId: o.supersedesOperationId,
             documentId: o.documentId,
             createdAt: o.createdAt ? new Date(o.createdAt) : null,
+            authorName: (o.parametersJson as Record<string, unknown> | null)?.authorName as string | null ?? null,
           }),
         ),
       );
     } catch {
       setCommittedOperations([]);
-    }
-  }
-
-  async function resolveDownloadUrl(documentId: string): Promise<string> {
-    const cached = getCachedDownloadUrl(documentId);
-    if (cached) return cached;
-    const client = getApiClient(normalizedApiUrl);
-    const { downloadUrl } = await client.storage.getDownloadUrlByDocument.query({ documentId });
-    setCachedDownloadUrl(documentId, downloadUrl);
-    return downloadUrl;
-  }
-
-  async function onOpenWorkbook(documentId: string) {
-    try {
-      Office.context.ui.openBrowserWindow(await resolveDownloadUrl(documentId));
-    } catch (error) {
-      setError(`Failed to open workbook: ${formatError(error)}`);
-    }
-  }
-
-  async function onOpenDocument(documentId: string, _fileExtension: string | null) {
-    try {
-      Office.context.ui.openBrowserWindow(await resolveDownloadUrl(documentId));
-    } catch (error) {
-      setError(`Failed to open document: ${formatError(error)}`);
     }
   }
 
@@ -678,7 +660,6 @@ export default function App() {
         availableSnapshots={availableSnapshots}
         availableRuns={availableRuns}
         selectedRunId={selectedRunId}
-        selectedBranchName={null}
         status={status}
         canContinue={canContinueToWorkspace}
         onReloadContext={loadClientAndSnapshotOptions}
@@ -710,6 +691,9 @@ export default function App() {
       runSession={runSession}
       operations={committedOperations}
       status={status}
+      clientId={selectedClientId}
+      snapshotId={snapshotId}
+      webUrl={webUrl}
       onBackToRun={() => setCurrentPage("run")}
       onSaveScenario={onSaveScenario}
       sourceDocuments={sourceDocuments}
@@ -717,8 +701,6 @@ export default function App() {
       isDetectingRegions={isDetectingRegions}
       onDetectRegions={runWorkbookDetection}
       onSelectRegion={selectRange}
-      onOpenWorkbook={onOpenWorkbook}
-      onOpenDocument={onOpenDocument}
       onUploadDocument={onUploadDocument}
       onAsk={onAsk}
     />

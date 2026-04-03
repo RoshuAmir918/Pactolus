@@ -126,7 +126,6 @@ function TreeSectionLabel(props: { label: string; locked?: boolean }) {
 function RunNode(props: {
   run: RunOption;
   selected: boolean;
-  selectedBranchName: string | null;
   onSelect: () => void;
   isLast: boolean;
 }) {
@@ -182,13 +181,6 @@ function RunNode(props: {
               <span className="text-[10px]">·</span>
               <span className="text-xs">{formatDate(props.run.createdAt)}</span>
             </div>
-            {props.selected && props.selectedBranchName && (
-              <div className="mt-1 flex items-center gap-1">
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/15 text-white/70">
-                  branch: {props.selectedBranchName}
-                </span>
-              </div>
-            )}
           </div>
         </button>
       </div>
@@ -265,7 +257,6 @@ export function RunSetupPage(props: {
   availableSnapshots: SnapshotOption[];
   availableRuns: RunOption[];
   selectedRunId: string;
-  selectedBranchName: string | null;
   status: { kind: "ok" | "error"; message: string } | null;
   canContinue: boolean;
   onReloadContext: () => Promise<void> | void;
@@ -376,7 +367,6 @@ export function RunSetupPage(props: {
                     key={run.id}
                     run={run}
                     selected={isSelected}
-                    selectedBranchName={isSelected ? props.selectedBranchName : null}
                     onSelect={() => props.onRunSelect(run.id)}
                     isLast={isLast}
                   />

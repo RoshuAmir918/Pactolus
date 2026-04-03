@@ -1,11 +1,11 @@
 import type { OperationRecord } from "@/features/types";
 import type { NodeTone, TreeNode } from "../types";
 
-export const NW = 88;
-export const NH = 26;
-export const HGAP = 10;
-export const VGAP = 42;
-export const PADDING = 14;
+export const NW = 132;
+export const NH = 40;
+export const HGAP = 14;
+export const VGAP = 56;
+export const PADDING = 16;
 
 export function subtreeW(node: TreeNode): number {
   if (!node.children.length) return NW;
@@ -49,9 +49,9 @@ export function cloneTree(node: TreeNode): TreeNode {
 
 function make(
   id: string, label: string, meta: string, tone: NodeTone,
-  parent: string | null, documentId?: string,
+  parent: string | null, documentId?: string, branchRootId?: string,
 ): TreeNode {
-  return { id, label, meta, tone, parent, documentId, children: [], lx: 0, ly: 0 };
+  return { id, label, meta, tone, parent, documentId, branchRootId, children: [], lx: 0, ly: 0 };
 }
 
 /**
@@ -59,7 +59,7 @@ function make(
  * Superseded operations are hidden unless they are a parent of a visible operation.
  */
 export function buildTreeFromOperations(operations: OperationRecord[]): TreeNode {
-  const ingest = make("ingest", "Ingest", "source data", "done", null);
+  const ingest = make("ingest", "Ingest", "source data", "done", null, undefined, "ingest");
   const nodeById = new Map<string, TreeNode>();
   nodeById.set("ingest", ingest);
 
@@ -93,7 +93,18 @@ export function buildTreeFromOperations(operations: OperationRecord[]): TreeNode
         ? (nodeById.get(op.parentOperationId) ?? ingest)
         : ingest;
 
-    const node = make(op.id, label, meta, "saved", parentNode.id, op.documentId ?? undefined);
+    const branchRootId = parentNode.id === "ingest"
+      ? op.id
+      : (parentNode.branchRootId ?? parentNode.id);
+    const node = make(
+      op.id,
+      label,
+      meta,
+      "saved",
+      parentNode.id,
+      op.documentId ?? undefined,
+      branchRootId,
+    );
     nodeById.set(op.id, node);
     parentNode.children.push(node);
   }
@@ -127,6 +138,7 @@ export function withSkeletons(root: TreeNode, anchorId?: string | null): TreeNod
     meta: "",
     tone: "skeleton",
     parent: anchor.id,
+    branchRootId: anchor.branchRootId ?? anchor.id,
     children: [],
     lx: 0,
     ly: 0,
@@ -142,6 +154,7 @@ export function withSkeletons(root: TreeNode, anchorId?: string | null): TreeNod
         meta: "",
         tone: "skeleton",
         parent: anchor.parent,
+        branchRootId: anchorParent.branchRootId ?? anchorParent.id,
         children: [],
         lx: 0,
         ly: 0,
