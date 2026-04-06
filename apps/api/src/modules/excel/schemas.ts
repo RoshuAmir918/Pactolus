@@ -109,14 +109,19 @@ export const detectWorkbookRegionsInputSchema = z.object({
   ).min(1).max(10),
 });
 
+const detectedRegionSchema = z.object({
+  address: z.string(),
+  description: z.string(),
+  reason: z.string(),
+  confidencePercent: z.number().int(),
+  colHeaderAddress: z.string().optional(),
+  rowHeaderAddress: z.string().optional(),
+});
+
 const detectedSheetSchema = z.object({
   sheetName: z.string(),
-  inputRegions: z.array(
-    z.object({ address: z.string(), reason: z.string(), confidencePercent: z.number().int() }),
-  ),
-  outputRegions: z.array(
-    z.object({ address: z.string(), reason: z.string(), confidencePercent: z.number().int() }),
-  ),
+  inputRegions: z.array(detectedRegionSchema),
+  outputRegions: z.array(detectedRegionSchema),
 });
 
 export const detectWorkbookRegionsOutputSchema = z.object({

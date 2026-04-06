@@ -1,5 +1,7 @@
 import { authenticatedProcedure, router } from "@api/trpc/base";
 import {
+  analyzeComparisonInputSchema,
+  analyzeComparisonOutputSchema,
   appendOperationInputSchema,
   appendOperationOutputSchema,
   createRunInputSchema,
@@ -21,6 +23,7 @@ import {
   setOperationNoteInputSchema,
   setOperationNoteOutputSchema,
 } from "./schemas";
+import { analyzeComparison, type AnalyzeComparisonResult } from "./services/analyzeComparison";
 import { appendOperation, type AppendOperationResult } from "./services/appendOperation";
 import { createRun, type CreateRunResult } from "./services/createRun";
 import { generateOperationLabel, type GenerateOperationLabelResult } from "./services/generateOperationLabel";
@@ -110,6 +113,13 @@ export const operationsRouter = router({
     .output(getOperationNoteOutputSchema)
     .query(async ({ ctx, input }): Promise<GetOperationNoteResult> =>
       getOperationNote({ orgId: ctx.orgId, runId: input.runId, operationId: input.operationId }),
+    ),
+
+  analyzeComparison: authenticatedProcedure
+    .input(analyzeComparisonInputSchema)
+    .output(analyzeComparisonOutputSchema)
+    .mutation(async ({ ctx, input }): Promise<AnalyzeComparisonResult> =>
+      analyzeComparison({ orgId: ctx.orgId, runId: input.runId, operationIds: input.operationIds }),
     ),
 
   generateOperationLabel: authenticatedProcedure

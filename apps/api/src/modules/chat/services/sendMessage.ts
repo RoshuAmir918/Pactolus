@@ -5,6 +5,7 @@ import {
   documents,
   runPipelineContext,
   runOperationCaptures,
+  runOperationNotes,
   runOperations,
 } from "@db/schema";
 
@@ -17,6 +18,7 @@ export type SendMessageInput = {
   orgId: string;
   snapshotId: string;
   runId: string | null;
+  operationId: string | null;
   messages: Array<{ role: "user" | "assistant"; text: string }>;
   selectedRange?: string | null;
 };
@@ -79,14 +81,15 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     pipelineContextRows = rows.filter((a) => a.contextType !== "AI_RAW_RESPONSE");
   }
 
-  // 2b. Load analyst captures for the run (narrative, output values)
-  type CaptureRow = { id: string; operationType: string; captureType: string; summaryText: string | null };
+  // 2b. Load analyst captures for the run (summary only — full payload fetchable via fetch_source)
+  type CaptureRow = { id: string; operationId: string; operationType: string; captureType: string; summaryText: string | null };
   let captureRows: CaptureRow[] = [];
 
   if (input.runId) {
     captureRows = await db
       .select({
         id: runOperationCaptures.id,
+        operationId: runOperations.id,
         operationType: runOperations.operationType,
         captureType: runOperationCaptures.captureType,
         summaryText: runOperationCaptures.summaryText,
@@ -97,8 +100,58 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
       .orderBy(runOperations.operationIndex);
   }
 
+  // 2c. Load focused node context if operationId provided
+  type FocusedNode = {
+    label: string | null;
+    operationIndex: number;
+    createdAt: Date | null;
+    noteText: string | null;
+    captures: Array<{ id: string; captureType: string; summaryText: string | null }>;
+  };
+  let focusedNode: FocusedNode | null = null;
+
+  if (input.runId && input.operationId) {
+    const [op] = await db
+      .select({
+        parametersJson: runOperations.parametersJson,
+        operationIndex: runOperations.operationIndex,
+        createdAt: runOperations.createdAt,
+      })
+      .from(runOperations)
+      .where(and(eq(runOperations.id, input.operationId), eq(runOperations.runId, input.runId)))
+      .limit(1);
+
+    if (op) {
+      const [note, nodeCaptureRows] = await Promise.all([
+        db
+          .select({ noteText: runOperationNotes.noteText })
+          .from(runOperationNotes)
+          .where(eq(runOperationNotes.runOperationId, input.operationId))
+          .limit(1)
+          .then((r) => r[0] ?? null),
+        db
+          .select({
+            id: runOperationCaptures.id,
+            captureType: runOperationCaptures.captureType,
+            summaryText: runOperationCaptures.summaryText,
+          })
+          .from(runOperationCaptures)
+          .where(eq(runOperationCaptures.runOperationId, input.operationId)),
+      ]);
+
+      const params = op.parametersJson as Record<string, unknown> | null;
+      focusedNode = {
+        label: (typeof params?.label === "string" ? params.label : null) ?? null,
+        operationIndex: op.operationIndex,
+        createdAt: op.createdAt ?? null,
+        noteText: note?.noteText ?? null,
+        captures: nodeCaptureRows,
+      };
+    }
+  }
+
   // 3. Build system prompt with metadata
-  const systemPrompt = buildSystemPrompt(sheets, pipelineContextRows, captureRows, input.selectedRange ?? null);
+  const systemPrompt = buildSystemPrompt(sheets, pipelineContextRows, captureRows, focusedNode, input.selectedRange ?? null);
 
   // 4. Convert messages to Anthropic format
   const claudeMessages = input.messages.map((m) => ({
@@ -150,8 +203,8 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
       properties: {
         source_type: {
           type: "string",
-          enum: ["document_sheet", "run_pipeline_context", "run_step_capture"],
-          description: "Whether to fetch a document sheet, pipeline context entry, or analyst capture",
+          enum: ["document_sheet", "run_pipeline_context", "run_step_capture", "operation_note"],
+          description: "Whether to fetch a document sheet, pipeline context entry, analyst capture, or analyst note",
         },
         source_id: {
           type: "string",
@@ -169,6 +222,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
   const tools = [fetchSourceTool, writeToExcelTool];
 
   // 6. Tool-use loop — handles sequential calls (e.g. fetch_source → write_to_excel)
+  // All tool_use blocks in a single response must each get a tool_result in the next message.
   type ContentBlock = { type: string; id?: string; name?: string; input?: unknown; text?: string };
 
   let currentMessages: unknown[] = [...claudeMessages];
@@ -178,13 +232,17 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     const response = await callAnthropic({ apiKey, systemPrompt, messages: currentMessages, tools });
     const content = response.content as ContentBlock[];
 
-    const toolUseBlock = content.find((b) => b.type === "tool_use");
+    const toolUseBlocks = content.filter((b) => b.type === "tool_use" && b.id && b.input);
 
-    // No tool call — Claude is done
-    if (!toolUseBlock?.id || !toolUseBlock.input) {
-      const textBlock = content.find((b) => b.type === "text");
+    // No tool calls — Claude is done
+    if (toolUseBlocks.length === 0) {
+      const reply = content
+        .filter((b) => b.type === "text" && b.text)
+        .map((b) => b.text)
+        .join("\n")
+        .trim();
       return {
-        reply: textBlock?.text ?? "No response generated.",
+        reply: reply || "I wasn't able to generate a response. Please try rephrasing.",
         excelAction: pendingExcelAction,
       };
     }
@@ -195,64 +253,59 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
       { role: "assistant" as const, content },
     ];
 
-    if (toolUseBlock.name === "write_to_excel") {
-      const toolInput = toolUseBlock.input as {
-        start_cell: string;
-        values: unknown[][];
-        sheet_name?: string;
-        description: string;
-      };
-      pendingExcelAction = {
-        type: "write_range",
-        startCell: toolInput.start_cell,
-        values: toolInput.values,
-        sheetName: toolInput.sheet_name,
-        description: toolInput.description,
-      };
-      currentMessages = [
-        ...currentMessages,
-        {
-          role: "user" as const,
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: toolUseBlock.id,
-              content: "Data staged. A Paste button will appear in the chat. Tell the user to click it.",
-            },
-          ],
-        },
-      ];
-    } else if (toolUseBlock.name === "fetch_source") {
-      const toolInput = toolUseBlock.input as {
-        source_type: string;
-        source_id: string;
-        reason: string;
-      };
-      const fetchedContent = await resolveSource(toolInput.source_type, toolInput.source_id, input.orgId);
-      currentMessages = [
-        ...currentMessages,
-        {
-          role: "user" as const,
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: toolUseBlock.id,
-              content: fetchedContent,
-            },
-          ],
-        },
-      ];
-    } else {
-      // Unknown tool — return whatever text Claude produced
-      const textBlock = content.find((b) => b.type === "text");
-      return {
-        reply: textBlock?.text ?? "No response generated.",
-        excelAction: pendingExcelAction,
-      };
+    // Resolve ALL tool calls in this turn — every tool_use must have a tool_result
+    const toolResults: unknown[] = [];
+
+    for (const toolBlock of toolUseBlocks) {
+      if (toolBlock.name === "write_to_excel") {
+        const toolInput = toolBlock.input as {
+          start_cell: string;
+          values: unknown[][];
+          sheet_name?: string;
+          description: string;
+        };
+        pendingExcelAction = {
+          type: "write_range",
+          startCell: toolInput.start_cell,
+          values: toolInput.values,
+          sheetName: toolInput.sheet_name,
+          description: toolInput.description,
+        };
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: toolBlock.id,
+          content: "Data staged. A Paste button will appear in the chat. Tell the user to click it.",
+        });
+      } else if (toolBlock.name === "fetch_source") {
+        const toolInput = toolBlock.input as {
+          source_type: string;
+          source_id: string;
+          reason: string;
+        };
+        const fetchedContent = await resolveSource(toolInput.source_type, toolInput.source_id, input.orgId);
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: toolBlock.id,
+          content: fetchedContent,
+        });
+      } else {
+        // Unknown tool — return an error result so the conversation stays valid
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: toolBlock.id,
+          content: `Unknown tool: ${toolBlock.name}`,
+          is_error: true,
+        });
+      }
     }
+
+    currentMessages = [
+      ...currentMessages,
+      { role: "user" as const, content: toolResults },
+    ];
   }
 
-  return { reply: "No response generated.", excelAction: pendingExcelAction };
+  return { reply: "I wasn't able to generate a response after several attempts. Please try again.", excelAction: pendingExcelAction };
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -315,6 +368,17 @@ async function resolveSource(
     return JSON.stringify(cap.payloadJson, null, 2);
   }
 
+  if (sourceType === "operation_note") {
+    const [note] = await db
+      .select({ noteText: runOperationNotes.noteText, updatedAt: runOperationNotes.updatedAt })
+      .from(runOperationNotes)
+      .where(eq(runOperationNotes.runOperationId, sourceId))
+      .limit(1);
+
+    if (!note?.noteText) return "No analyst note recorded for this operation.";
+    return JSON.stringify({ noteText: note.noteText, updatedAt: note.updatedAt }, null, 2);
+  }
+
   return "Unknown source type.";
 }
 
@@ -366,6 +430,14 @@ async function callAnthropic(input: {
   throw new Error("Anthropic API rate limit exceeded after retries.");
 }
 
+type FocusedNodeArg = {
+  label: string | null;
+  operationIndex: number;
+  createdAt: Date | null;
+  noteText: string | null;
+  captures: Array<{ id: string; captureType: string; summaryText: string | null }>;
+} | null;
+
 function buildSystemPrompt(
   sheets: Array<{
     id: string;
@@ -384,20 +456,24 @@ function buildSystemPrompt(
   }>,
   captures: Array<{
     id: string;
+    operationId: string;
     operationType: string;
     captureType: string;
     summaryText: string | null;
   }>,
+  focusedNode: FocusedNodeArg,
   selectedRange: string | null,
 ): string {
   const parts: string[] = [
     "You are an actuarial analysis assistant embedded in Pactolus, a reinsurance analytics platform.",
     "",
     "## Response style",
-    "- Match depth to the question. Short question → short answer. Don't volunteer every observation unprompted.",
-    "- Lead with the direct answer, then stop. Offer to go deeper only if genuinely useful.",
-    "- Use markdown: headers for structure, tables for data, bold for key numbers. Keep it tight.",
-    "- No emoji. No preamble ('Great question!'). No summaries at the end.",
+    "- Be concise. Default to 1-3 sentences. Only go longer if the question clearly requires it.",
+    "- For vague or open-ended questions, ask one clarifying question rather than dumping everything you know.",
+    "- Plain prose by default. No markdown headers, tables, or bullet lists unless the user explicitly asks for a breakdown or comparison.",
+    "- Bold only truly critical numbers. Never use headers in a conversational reply.",
+    "- No preamble ('Great question!', 'Sure!', 'Of course!'). No closing summaries. Just answer.",
+    "- If you'd need to fetch data to give a complete answer, say what you'd look at and ask if they want you to pull it up.",
     "",
     "## Tools",
     "",
@@ -413,6 +489,31 @@ function buildSystemPrompt(
     "If the data was shown earlier in the conversation as a table, reconstruct the 2D values array from that and call the tool.",
     "",
   ];
+
+  if (focusedNode) {
+    const savedAt = focusedNode.createdAt
+      ? new Date(focusedNode.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : null;
+    parts.push("## Focused Node (user is currently viewing this save point)");
+    parts.push(`**${focusedNode.label ?? "Saved"}** — operation #${focusedNode.operationIndex}${savedAt ? ` — ${savedAt}` : ""}`);
+
+    if (focusedNode.noteText) {
+      parts.push(`\n**Analyst note:** ${focusedNode.noteText}`);
+    }
+
+    if (focusedNode.captures.length > 0) {
+      parts.push("\n**Captures** (use fetch_source with source_type=run_step_capture and the capture id for full data):");
+      for (const cap of focusedNode.captures) {
+        const summary = cap.summaryText ? ` — ${cap.summaryText}` : "";
+        parts.push(`  - [${cap.captureType}]${summary} (id: ${cap.id})`);
+      }
+      if (focusedNode.noteText === null) {
+        // Mention note is fetchable even if empty
+        parts.push("\nNo analyst note recorded yet for this node.");
+      }
+    }
+    parts.push("");
+  }
 
   if (selectedRange) {
     parts.push(`User's selected Excel range: ${selectedRange}`, "");
@@ -459,10 +560,10 @@ function buildSystemPrompt(
 
   if (captures.length > 0) {
     parts.push("\n## Analyst Captures (this branch)");
+    parts.push("Use fetch_source with source_type=run_step_capture and the capture id to retrieve full data for any of these.");
     for (const cap of captures) {
-      if (cap.summaryText) {
-        parts.push(`  - [${cap.captureType}] ${cap.summaryText}`);
-      }
+      const summary = cap.summaryText ? ` — ${cap.summaryText}` : "";
+      parts.push(`  - [${cap.captureType}]${summary} (id: ${cap.id})`);
     }
   }
 

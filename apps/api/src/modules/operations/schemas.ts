@@ -139,6 +139,17 @@ export const getOperationNoteOutputSchema = z.object({
   updatedAt: z.date().nullable(),
 });
 
+// ── comparison analysis ───────────────────────────────────────────────────────
+
+export const analyzeComparisonInputSchema = z.object({
+  runId: z.uuid(),
+  operationIds: z.array(z.uuid()).min(2).max(3),
+});
+
+export const analyzeComparisonOutputSchema = z.object({
+  narrative: z.string(),
+});
+
 // ── label generation ──────────────────────────────────────────────────────────
 
 export const generateOperationLabelInputSchema = z.object({

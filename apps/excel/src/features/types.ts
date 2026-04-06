@@ -7,7 +7,10 @@ export type MonitoredRegion = {
   confidencePercent: number;
   userConfirmed: boolean;
   status?: "active" | "archived";
-  reason?: string;
+  description?: string;       // user-facing label, e.g. "Loss development triangle"
+  reason?: string;            // internal AI reasoning — never shown to users
+  colHeaderAddress?: string;  // AI-identified range for column headers, e.g. "B12:N12"
+  rowHeaderAddress?: string;  // AI-identified range for row labels, e.g. "A13:A22"
   evidence?: string[];
 };
 

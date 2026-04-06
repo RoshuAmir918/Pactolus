@@ -18,8 +18,8 @@ export type WorkbookSheetInput = {
 
 export type DetectedSheetRegions = {
   sheetName: string;
-  inputRegions: Array<{ address: string; reason: string; confidencePercent: number }>;
-  outputRegions: Array<{ address: string; reason: string; confidencePercent: number }>;
+  inputRegions: Array<{ address: string; description: string; reason: string; confidencePercent: number; colHeaderAddress?: string; rowHeaderAddress?: string }>;
+  outputRegions: Array<{ address: string; description: string; reason: string; confidencePercent: number; colHeaderAddress?: string; rowHeaderAddress?: string }>;
 };
 
 export type DetectWorkbookRegionsResult = {
@@ -97,11 +97,14 @@ export async function detectWorkbookRegions(input: {
                 items: {
                   type: "object",
                   properties: {
-                    address: { type: "string", description: "Excel range address, e.g. B13:N22" },
-                    reason: { type: "string", description: "Why this is an input region" },
+                    address: { type: "string", description: "Excel range address of the data, e.g. B13:N22" },
+                    description: { type: "string", description: "Short user-facing label, e.g. 'Loss development triangle' or 'Commission rate inputs'. No internal reasoning." },
+                    reason: { type: "string", description: "Internal reasoning for why this is an input region" },
                     confidence_percent: { type: "number" },
+                    col_header_address: { type: "string", description: "Address of the row containing column headers for this region, e.g. B12:N12. Omit if there are no meaningful column labels." },
+                    row_header_address: { type: "string", description: "Address of the column containing row labels for this region, e.g. A13:A22. Omit if there are no meaningful row labels." },
                   },
-                  required: ["address", "reason", "confidence_percent"],
+                  required: ["address", "description", "reason", "confidence_percent"],
                 },
               },
               output_regions: {
@@ -110,10 +113,13 @@ export async function detectWorkbookRegions(input: {
                   type: "object",
                   properties: {
                     address: { type: "string" },
+                    description: { type: "string", description: "Short user-facing label, e.g. 'Net loss ratio' or 'Ceded premium summary'. No internal reasoning." },
                     reason: { type: "string" },
                     confidence_percent: { type: "number" },
+                    col_header_address: { type: "string", description: "Address of the row containing column headers for this region. Omit if none." },
+                    row_header_address: { type: "string", description: "Address of the column containing row labels for this region. Omit if none." },
                   },
-                  required: ["address", "reason", "confidence_percent"],
+                  required: ["address", "description", "reason", "confidence_percent"],
                 },
               },
             },
@@ -163,8 +169,8 @@ export async function detectWorkbookRegions(input: {
       const toolInput = reportBlock.input as {
         sheets: Array<{
           sheet_name: string;
-          input_regions: Array<{ address: string; reason: string; confidence_percent: number }>;
-          output_regions: Array<{ address: string; reason: string; confidence_percent: number }>;
+          input_regions: Array<{ address: string; description: string; reason: string; confidence_percent: number; col_header_address?: string; row_header_address?: string }>;
+          output_regions: Array<{ address: string; description: string; reason: string; confidence_percent: number; col_header_address?: string; row_header_address?: string }>;
         }>;
         prompt_message: string | null;
       };
@@ -173,13 +179,19 @@ export async function detectWorkbookRegions(input: {
         sheetName: s.sheet_name,
         inputRegions: s.input_regions.map((r) => ({
           address: r.address,
+          description: r.description,
           reason: r.reason,
           confidencePercent: r.confidence_percent,
+          colHeaderAddress: r.col_header_address,
+          rowHeaderAddress: r.row_header_address,
         })),
         outputRegions: s.output_regions.map((r) => ({
           address: r.address,
+          description: r.description,
           reason: r.reason,
           confidencePercent: r.confidence_percent,
+          colHeaderAddress: r.col_header_address,
+          rowHeaderAddress: r.row_header_address,
         })),
       }));
 

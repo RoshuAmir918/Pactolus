@@ -212,6 +212,9 @@ export type AuthTRPC = {
     generateOperationLabel: {
       mutate: (input: { runId: string; operationId: string }) => Promise<{ label: string }>;
     };
+    analyzeComparison: {
+      mutate: (input: { runId: string; operationIds: string[] }) => Promise<{ narrative: string }>;
+    };
     setOperationNote: {
       mutate: (input: { runId: string; operationId: string; noteText: string }) => Promise<{
         deleted: boolean;
@@ -222,6 +225,26 @@ export type AuthTRPC = {
       query: (input: { runId: string; operationId: string }) => Promise<{
         noteText: string | null;
         updatedAt: Date | null;
+      }>;
+    };
+  };
+  chat: {
+    sendMessage: {
+      mutate: (input: {
+        snapshotId: string;
+        runId: string | null;
+        operationId?: string | null;
+        messages: Array<{ role: "user" | "assistant"; text: string }>;
+        selectedRange?: string | null;
+      }) => Promise<{
+        reply: string;
+        excelAction?: {
+          type: "write_range";
+          startCell: string;
+          values: unknown[][];
+          sheetName?: string;
+          description: string;
+        } | null;
       }>;
     };
   };

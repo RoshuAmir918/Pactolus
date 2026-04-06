@@ -440,7 +440,9 @@ export default function App() {
         }
       }
       try {
-        const regionValues = await readAllRegionValues(detectedRegions);
+        // Re-detect regions at save time so values reflect the current workbook state
+        const freshRegions = await runWorkbookDetection();
+        const regionValues = await readAllRegionValues(freshRegions);
         if (regionValues.length > 0) {
           await client.operations.saveOperationCapture.mutate({
             runId: runIdForCapture,
@@ -506,15 +508,15 @@ export default function App() {
 
   // ── workbook region detection ─────────────────────────────────────────────────
 
-  async function runWorkbookDetection() {
-    if (!snapshotId.trim()) return;
+  async function runWorkbookDetection(): Promise<typeof detectedRegions> {
+    if (!snapshotId.trim()) return detectedRegions;
     setIsDetectingRegions(true);
     try {
       const sheets = await captureAllSheetSlices();
-      if (sheets.length === 0) return;
+      if (sheets.length === 0) return detectedRegions;
       const client = getApiClient(normalizedApiUrl);
       const result = await client.excel.detectWorkbookRegions.mutate({ snapshotId: snapshotId.trim(), sheets });
-      type RegionItem = { address: string; reason: string; confidencePercent: number };
+      type RegionItem = { address: string; description: string; reason: string; confidencePercent: number; colHeaderAddress?: string; rowHeaderAddress?: string };
       type SheetResult = { sheetName: string; inputRegions: RegionItem[]; outputRegions: RegionItem[] };
       const allRegions = result.sheets.flatMap((s: SheetResult) => [
         ...s.inputRegions.map((r) => ({
@@ -523,7 +525,10 @@ export default function App() {
           confidencePercent: r.confidencePercent,
           userConfirmed: false,
           sheetName: s.sheetName,
+          description: r.description,
           reason: r.reason,
+          colHeaderAddress: r.colHeaderAddress,
+          rowHeaderAddress: r.rowHeaderAddress,
         })),
         ...s.outputRegions.map((r) => ({
           address: r.address,
@@ -531,7 +536,10 @@ export default function App() {
           confidencePercent: r.confidencePercent,
           userConfirmed: false,
           sheetName: s.sheetName,
+          description: r.description,
           reason: r.reason,
+          colHeaderAddress: r.colHeaderAddress,
+          rowHeaderAddress: r.rowHeaderAddress,
         })),
       ]);
       setDetectedRegions(allRegions);
@@ -541,8 +549,9 @@ export default function App() {
           { role: "assistant", text: result.promptMessage! },
         ]);
       }
+      return allRegions;
     } catch {
-      // silent
+      return detectedRegions;
     } finally {
       setIsDetectingRegions(false);
     }
@@ -699,7 +708,7 @@ export default function App() {
       sourceDocuments={sourceDocuments}
       detectedRegions={detectedRegions}
       isDetectingRegions={isDetectingRegions}
-      onDetectRegions={runWorkbookDetection}
+      onDetectRegions={() => runWorkbookDetection().then(() => {})}
       onSelectRegion={selectRange}
       onUploadDocument={onUploadDocument}
       onAsk={onAsk}

@@ -238,29 +238,61 @@ export type RegionValues = {
   address: string;
   sheetName: string;
   regionType: "input" | "output";
-  reason?: string;
+  description?: string;   // user-facing label shown in web UI
+  reason?: string;        // internal reasoning, not shown to users
+  colHeaders?: string[];  // values from the row above the region (column axis labels)
+  rowHeaders?: string[];  // values from the column to the left of the region (row axis labels)
   values: unknown[][];
 };
 
-/** Reads values from all detected regions (both input and output), preserving reason as a label hint. */
+/** Reads values from all detected regions, plus any header ranges the AI identified. */
 export async function readAllRegionValues(regions: MonitoredRegion[]): Promise<RegionValues[]> {
   const relevant = regions.filter((r) => r.address && r.sheetName);
   if (relevant.length === 0) return [];
 
   return Excel.run(async (context) => {
-    const fetches: Array<{ region: MonitoredRegion; range: Excel.Range }> = [];
+    type Fetch = {
+      region: MonitoredRegion;
+      range: Excel.Range;
+      colHeaderRange: Excel.Range | null;
+      rowHeaderRange: Excel.Range | null;
+    };
+    const fetches: Fetch[] = [];
+
     for (const region of relevant) {
       const sheet = context.workbook.worksheets.getItem(region.sheetName!);
       const range = sheet.getRange(region.address);
       range.load("values");
-      fetches.push({ region, range });
+
+      let colHeaderRange: Excel.Range | null = null;
+      let rowHeaderRange: Excel.Range | null = null;
+
+      if (region.colHeaderAddress) {
+        colHeaderRange = sheet.getRange(region.colHeaderAddress);
+        colHeaderRange.load("values");
+      }
+      if (region.rowHeaderAddress) {
+        rowHeaderRange = sheet.getRange(region.rowHeaderAddress);
+        rowHeaderRange.load("values");
+      }
+
+      fetches.push({ region, range, colHeaderRange, rowHeaderRange });
     }
+
     await context.sync();
-    return fetches.map(({ region, range }) => ({
+
+    return fetches.map(({ region, range, colHeaderRange, rowHeaderRange }) => ({
       address: region.address,
       sheetName: region.sheetName!,
       regionType: region.regionType,
+      description: region.description,
       reason: region.reason,
+      colHeaders: colHeaderRange
+        ? ((colHeaderRange.values?.[0] ?? []) as unknown[]).map((v) => (v === null || v === "" ? "" : String(v)))
+        : undefined,
+      rowHeaders: rowHeaderRange
+        ? ((rowHeaderRange.values ?? []) as unknown[][]).map((row) => (row[0] === null || row[0] === "" ? "" : String(row[0])))
+        : undefined,
       values: (range.values ?? []) as unknown[][],
     }));
   });

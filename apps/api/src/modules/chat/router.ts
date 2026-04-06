@@ -11,6 +11,7 @@ export const chatRouter = router({
         orgId: ctx.orgId,
         snapshotId: input.snapshotId,
         runId: input.runId,
+        operationId: input.operationId ?? null,
         messages: input.messages,
         selectedRange: input.selectedRange,
       }),

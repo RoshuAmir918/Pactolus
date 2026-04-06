@@ -3,15 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Save,
-  CircleDot,
   Loader2,
-  FileText,
-  Table2,
-  ScanSearch,
   Hash,
   Calendar,
   NotebookPen,
   Check,
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc-client";
@@ -56,60 +55,147 @@ function opLabel(op: Operation) {
   return op.operationType.replace(/_/g, " ");
 }
 
-// ── Capture renderers ─────────────────────────────────────────────────────────
+// ── Region values renderer ────────────────────────────────────────────────────
 
-function NarrativeCapture({ capture }: { capture: Capture }) {
-  const payload = capture.payloadJson as { text?: string } | null;
-  const text = payload?.text ?? capture.summaryText ?? "";
+type RegionEntry = {
+  address: string;
+  sheetName?: string;
+  regionType: "input" | "output";
+  description?: string;
+  reason?: string;
+  colHeaders?: string[];
+  rowHeaders?: string[];
+  values: unknown[][];
+};
+
+function formatCellVal(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "number") return v.toLocaleString("en-US");
+  return String(v);
+}
+
+function maxCols(values: unknown[][]): number {
+  return Math.max(...values.map((r) => r.filter((v) => v !== null && v !== undefined && v !== "").length));
+}
+
+// ── Narrow layout: 1-2 data columns → inline chip list, no toggle ─────────────
+
+function NarrowInline({ region, accentText }: { region: RegionEntry; accentText: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const cellRef = `${region.sheetName ? `${region.sheetName}!` : ""}${region.address}`;
+  const count = region.values.flat().filter((v) => v !== null && v !== undefined && v !== "").length;
+  const flat = region.values.flatMap((row, ri) =>
+    row
+      .filter((v) => v !== null && v !== undefined && v !== "")
+      .map((v, ci) => ({
+        label: region.rowHeaders?.[ri] ?? region.colHeaders?.[ci] ?? null,
+        value: formatCellVal(v),
+      })),
+  );
+
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <FileText className="w-3.5 h-3.5" />
-        Narrative
-      </div>
-      <p className="text-sm leading-relaxed text-foreground bg-muted/30 rounded-md px-3 py-2.5 border border-border/50">
-        {text || <span className="text-muted-foreground italic">No narrative recorded</span>}
-      </p>
+    <div className="rounded-lg border border-border bg-card text-xs overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex flex-col gap-0.5 px-3 py-2.5 text-left hover:bg-muted/30 transition-colors"
+      >
+        <p className="font-medium text-foreground truncate leading-tight">
+          {region.description ?? region.reason ?? cellRef}
+        </p>
+        <div className="flex items-center justify-between gap-1">
+          <p className={cn("text-[10px] font-mono truncate", accentText)}>{cellRef}</p>
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[10px] text-muted-foreground">{count} value{count !== 1 ? "s" : ""}</span>
+            <ChevronDown className={cn("w-3 h-3 text-muted-foreground transition-transform", expanded && "rotate-180")} />
+          </div>
+        </div>
+      </button>
+      {expanded && (
+        <div className="border-t border-border px-3 py-2 flex flex-wrap gap-1">
+          {flat.map((item, i) => (
+            <div key={i} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 border border-border/50">
+              {item.label && (
+                <span className="text-muted-foreground text-[9px] max-w-[60px] truncate">{item.label}</span>
+              )}
+              {item.label && <span className="text-muted-foreground/40 text-[8px]">·</span>}
+              <span className="font-medium tabular-nums text-[10px]">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function OutputValuesCapture({ capture }: { capture: Capture }) {
-  type OutputEntry = { address: string; label?: string; value: unknown; sheet?: string };
-  const payload = capture.payloadJson as { values?: OutputEntry[] } | null;
-  const values = payload?.values ?? [];
+// ── Wide layout: 3+ data columns → expandable grid ───────────────────────────
+
+function WideExpandable({ region, accentText }: { region: RegionEntry; accentText: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const cellRef = `${region.sheetName ? `${region.sheetName}!` : ""}${region.address}`;
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Table2 className="w-3.5 h-3.5" />
-        Output values
-        <span className="ml-auto text-[10px] bg-muted px-1.5 py-0.5 rounded">{values.length}</span>
-      </div>
-      {values.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic px-1">No output values captured</p>
-      ) : (
-        <div className="rounded-md border border-border overflow-hidden text-xs">
-          <table className="w-full">
-            <thead>
-              <tr className="bg-muted/50 border-b border-border">
-                <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Cell</th>
-                <th className="text-left px-3 py-1.5 text-muted-foreground font-medium">Label</th>
-                <th className="text-right px-3 py-1.5 text-muted-foreground font-medium">Value</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {values.map((v, i) => (
-                <tr key={i} className="hover:bg-muted/20">
-                  <td className="px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
-                    {v.sheet ? `${v.sheet}!` : ""}{v.address}
-                  </td>
-                  <td className="px-3 py-1.5 text-foreground">{v.label ?? "—"}</td>
-                  <td className="px-3 py-1.5 text-right font-medium tabular-nums">
-                    {v.value == null ? <span className="text-muted-foreground">—</span> : String(v.value)}
-                  </td>
+    <div className="rounded-lg border border-border bg-card overflow-hidden text-xs">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted/30 transition-colors"
+      >
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-foreground truncate">
+            {region.description ?? region.reason ?? cellRef}
+          </p>
+          <p className={cn("text-[10px] font-mono mt-0.5", accentText)}>{cellRef}</p>
+        </div>
+        <ChevronDown
+          className={cn(
+            "w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform",
+            expanded && "rotate-180",
+          )}
+        />
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border overflow-auto max-h-56">
+          <table className="text-[11px] font-mono w-full">
+            {region.colHeaders && region.colHeaders.some((h) => h !== "") && (
+              <thead>
+                <tr className="bg-muted/50 border-b border-border">
+                  {region.rowHeaders && <th className="px-2 py-1 text-left text-muted-foreground font-medium border-r border-border/40" />}
+                  {region.colHeaders.map((h, ci) => (
+                    <th key={ci} className="px-2 py-1 text-right text-muted-foreground font-medium whitespace-nowrap border-r border-border/40 last:border-r-0">
+                      {h || ""}
+                    </th>
+                  ))}
                 </tr>
-              ))}
+              </thead>
+            )}
+            <tbody>
+              {region.values.map((row, ri) => {
+                let lastNonEmpty = row.length - 1;
+                while (lastNonEmpty > 0 && (row[lastNonEmpty] === null || row[lastNonEmpty] === undefined || row[lastNonEmpty] === "")) {
+                  lastNonEmpty--;
+                }
+                const trimmed = row.slice(0, lastNonEmpty + 1);
+                return (
+                  <tr key={ri} className={ri % 2 === 0 ? "bg-muted/20" : ""}>
+                    {region.rowHeaders && (
+                      <td className="px-2 py-0.5 text-left text-muted-foreground font-medium whitespace-nowrap border-r border-border/40 sticky left-0 bg-inherit">
+                        {region.rowHeaders[ri] ?? ""}
+                      </td>
+                    )}
+                    {trimmed.map((cell, ci) => (
+                      <td key={ci} className="px-2 py-0.5 text-right tabular-nums whitespace-nowrap border-r border-border/40 last:border-r-0">
+                        {cell === null || cell === undefined || cell === "" ? (
+                          <span className="text-muted-foreground/30">·</span>
+                        ) : (
+                          String(cell)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -118,58 +204,115 @@ function OutputValuesCapture({ capture }: { capture: Capture }) {
   );
 }
 
-function DetectedRegionsCapture({ capture }: { capture: Capture }) {
-  type RegionEntry = { name?: string; address?: string; type?: string; sheet?: string };
-  const payload = capture.payloadJson as { regions?: RegionEntry[] } | null;
-  const regions = payload?.regions ?? [];
+function RegionCard({ region, type }: { region: RegionEntry; type: "input" | "output" }) {
+  const accentText = type === "input" ? "text-sky-600 dark:text-sky-400" : "text-emerald-600 dark:text-emerald-400";
+  const cols = maxCols(region.values);
 
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <ScanSearch className="w-3.5 h-3.5" />
-        Detected regions
-        <span className="ml-auto text-[10px] bg-muted px-1.5 py-0.5 rounded">{regions.length}</span>
+  // Single cell: stacked label + value, fits half-width well
+  if (cols <= 1 && region.values.length === 1) {
+    const cellRef = `${region.sheetName ? `${region.sheetName}!` : ""}${region.address}`;
+    return (
+      <div className="rounded-lg border border-border bg-card text-xs flex flex-col gap-1 px-3 py-2.5">
+        <p className="font-medium text-foreground truncate leading-tight">{region.description ?? region.reason ?? cellRef}</p>
+        <div className="flex items-end justify-between gap-1 min-w-0">
+          <p className={cn("text-[10px] font-mono truncate", accentText)}>{cellRef}</p>
+          <span className="font-semibold tabular-nums text-foreground text-sm shrink-0 leading-tight">
+            {formatCellVal(region.values[0]?.[0])}
+          </span>
+        </div>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {regions.map((r, i) => (
-          <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-muted/30 text-xs">
-            <span className="font-medium">{r.name ?? r.type ?? "Region"}</span>
-            {r.address && (
-              <span className="text-muted-foreground font-mono text-[10px]">
-                {r.sheet ? `${r.sheet}!` : ""}{r.address}
-              </span>
-            )}
-          </div>
-        ))}
-        {regions.length === 0 && (
-          <p className="text-xs text-muted-foreground italic">No regions detected</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function GenericCapture({ capture }: { capture: Capture }) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <CircleDot className="w-3.5 h-3.5" />
-        {capture.captureType.replace(/_/g, " ")}
-      </div>
-      <pre className="text-[11px] font-mono bg-muted/30 border border-border/50 rounded-md p-3 overflow-auto max-h-40 text-muted-foreground">
-        {JSON.stringify(capture.payloadJson, null, 2)}
-      </pre>
-    </div>
-  );
-}
-
-function CaptureCard({ capture }: { capture: Capture }) {
-  switch (capture.captureType) {
-    case "narrative":        return <NarrativeCapture capture={capture} />;
-    case "output_values":    return <OutputValuesCapture capture={capture} />;
-    case "detected_regions": return <DetectedRegionsCapture capture={capture} />;
-    default:                 return <GenericCapture capture={capture} />;
+    );
   }
+
+  // Narrow (1-2 cols, multi-row): inline chip list
+  if (cols <= 2) return <NarrowInline region={region} accentText={accentText} />;
+
+  // Wide (3+ cols): expandable grid
+  return <WideExpandable region={region} accentText={accentText} />;
+}
+
+const SHOW_DEFAULT = 3;
+
+function regionPriority(r: RegionEntry): number {
+  const cols = maxCols(r.values);
+  const rows = r.values.length;
+  // Single cell = 0 (highest), narrow column = 1, wide grid = 2
+  if (cols <= 1 && rows === 1) return 0;
+  if (cols <= 2) return 1;
+  return 2;
+}
+
+function RegionSection({
+  regions,
+  type,
+}: {
+  regions: RegionEntry[];
+  type: "input" | "output";
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const filtered = regions
+    .filter((r) => r.regionType === type)
+    .sort((a, b) => regionPriority(a) - regionPriority(b));
+
+  if (filtered.length === 0) return null;
+
+  const visible = showAll ? filtered : filtered.slice(0, SHOW_DEFAULT);
+  const hidden = filtered.length - SHOW_DEFAULT;
+
+  // Split into compact (single-cell / narrow) and wide (grids that need full width)
+  const compact = visible.filter((r) => maxCols(r.values) <= 2 || r.values.length === 1);
+  const wide = visible.filter((r) => maxCols(r.values) > 2 && r.values.length > 1);
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        {type === "input" ? (
+          <ArrowDown className="w-3.5 h-3.5 text-sky-500" />
+        ) : (
+          <ArrowUp className="w-3.5 h-3.5 text-emerald-500" />
+        )}
+        {type === "input" ? "Inputs" : "Outputs"}
+        <span className="ml-auto text-[10px] bg-muted px-1.5 py-0.5 rounded">{filtered.length}</span>
+      </div>
+
+      {/* Compact cards: 2-column grid */}
+      {compact.length > 0 && (
+        <div className="grid grid-cols-2 gap-1.5">
+          {compact.map((r, i) => (
+            <RegionCard key={i} region={r} type={type} />
+          ))}
+        </div>
+      )}
+
+      {/* Wide cards: full width */}
+      {wide.length > 0 && (
+        <div className="space-y-1.5">
+          {wide.map((r, i) => (
+            <RegionCard key={i} region={r} type={type} />
+          ))}
+        </div>
+      )}
+
+      {!showAll && hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="w-full text-center text-[11px] text-muted-foreground hover:text-foreground transition-colors py-1"
+        >
+          + {hidden} more
+        </button>
+      )}
+      {showAll && filtered.length > SHOW_DEFAULT && (
+        <button
+          type="button"
+          onClick={() => setShowAll(false)}
+          className="w-full text-center text-[11px] text-muted-foreground hover:text-foreground transition-colors py-1"
+        >
+          Show less
+        </button>
+      )}
+    </div>
+  );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -249,7 +392,11 @@ export function NodeDetailPanel({ runId, stepId }: Props) {
     }
   }
 
-  const params = op?.parametersJson as Record<string, unknown> | null;
+  const regionValues = captures
+    ? (captures.find((c) => c.captureType === "region_values")?.payloadJson as
+        | { regions?: RegionEntry[] }
+        | null)?.regions ?? []
+    : null;
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background">
@@ -282,23 +429,6 @@ export function NodeDetailPanel({ runId, stepId }: Props) {
             <span className="font-medium">{op ? fmtDateTime(op.createdAt) : "—"}</span>
           </MetaCell>
         </div>
-
-        {/* Parameters */}
-        {params && Object.keys(params).length > 0 && (
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Parameters</p>
-            <div className="rounded-md border border-border/50 divide-y divide-border/50 text-xs">
-              {Object.entries(params).map(([k, v]) => (
-                <div key={k} className="flex items-start gap-2 px-3 py-2">
-                  <span className="text-muted-foreground shrink-0 font-mono">{k}</span>
-                  <span className="text-foreground text-right ml-auto truncate max-w-[60%]">
-                    {typeof v === "object" ? JSON.stringify(v) : String(v ?? "—")}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Analyst note */}
         <div className="space-y-1.5">
@@ -342,26 +472,21 @@ export function NodeDetailPanel({ runId, stepId }: Props) {
 
         <div className="border-t border-border" />
 
-        {/* Captures */}
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Captures</p>
-        </div>
-
+        {/* Region values — outputs first, then inputs */}
         {loading ? (
           <div className="flex items-center gap-2 text-muted-foreground py-4">
             <Loader2 className="w-4 h-4 animate-spin" />
-            <span className="text-xs">Loading captures…</span>
+            <span className="text-xs">Loading…</span>
           </div>
-        ) : !captures || captures.length === 0 ? (
-          <p className="text-xs text-muted-foreground italic py-2">
-            No captures for this save yet. Record output values and a narrative in the Excel add-in.
-          </p>
+        ) : regionValues !== null && regionValues.length > 0 ? (
+          <>
+            <RegionSection regions={regionValues} type="output" />
+            <RegionSection regions={regionValues} type="input" />
+          </>
         ) : (
-          <div className="space-y-4">
-            {captures.map((c) => (
-              <CaptureCard key={c.id} capture={c} />
-            ))}
-          </div>
+          <p className="text-xs text-muted-foreground italic py-2">
+            No region data captured for this save yet.
+          </p>
         )}
       </div>
     </div>

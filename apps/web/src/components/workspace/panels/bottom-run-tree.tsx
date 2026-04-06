@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAtomValue, useAtom, useSetAtom } from "jotai";
 import { Save, Loader2, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { activeViewAtom, activeNodeIdAtom, type ActiveView } from "@/stores/workspace-ui";
+import { activeViewAtom, activeNodeIdAtom, compareNodeIdsAtom, type ActiveView } from "@/stores/workspace-ui";
 import { trpc } from "@/lib/trpc-client";
 
 // ── Layout constants (left-to-right) ─────────────────────────────────────────
@@ -163,6 +163,7 @@ export function BottomRunTree() {
   const activeView = useAtomValue(activeViewAtom);
   const [activeNodeId, setActiveNodeId] = useAtom(activeNodeIdAtom);
   const setActiveView = useSetAtom(activeViewAtom);
+  const [compareNodeIds, setCompareNodeIds] = useAtom(compareNodeIdsAtom);
   const [loadState, setLoadState] = useState<LoadState>({ status: "idle" });
 
   const runId =
@@ -251,32 +252,52 @@ export function BottomRunTree() {
             {/* Nodes */}
             {nodes.map((node) => {
               const isActive = activeNodeId === node.id;
+              const compareIdx = compareNodeIds.indexOf(node.id);
+              const isInCompare = compareIdx !== -1;
               const isIngest = node.id === "ingest";
               const branchStyle = branchStyleByRoot.get(node.branchRootId) ?? null;
               const left = node.lx + PADDING;
               const top  = node.ly + PADDING - NH / 2;
 
+              function handleClick(e: React.MouseEvent) {
+                if (isIngest || !node.op) return;
+                const isMulti = e.metaKey || e.ctrlKey;
+
+                if (isMulti) {
+                  // Toggle this node in/out of compare set (max 3)
+                  setCompareNodeIds((prev) => {
+                    if (prev.includes(node.id)) return prev.filter((id) => id !== node.id);
+                    if (prev.length >= 3) return prev;
+                    return [...prev, node.id];
+                  });
+                  return;
+                }
+
+                // Regular click: clear compare set, single-select
+                setCompareNodeIds([]);
+                const toggling = isActive;
+                setActiveNodeId(toggling ? null : node.id);
+                if (!toggling && activeView.type !== "home" && activeView.type !== "snapshot") {
+                  const base = activeView as Extract<ActiveView, { runId: string }>;
+                  setActiveView({ type: "node", clientId: base.clientId, snapshotId: base.snapshotId, runId: base.runId, nodeId: node.id });
+                } else if (toggling && activeView.type === "node") {
+                  const base = activeView as Extract<ActiveView, { runId: string }>;
+                  setActiveView({ type: "run", clientId: base.clientId, snapshotId: base.snapshotId, runId: base.runId });
+                }
+              }
+
               return (
                 <button
                   key={node.id}
                   disabled={isIngest}
-                  onClick={() => {
-                    if (isIngest || !node.op) return;
-                    const toggling = isActive;
-                    setActiveNodeId(toggling ? null : node.id);
-                    if (!toggling && activeView.type !== "home" && activeView.type !== "snapshot") {
-                      const base = activeView as Extract<ActiveView, { runId: string }>;
-                      setActiveView({ type: "node", clientId: base.clientId, snapshotId: base.snapshotId, runId: base.runId, nodeId: node.id });
-                    } else if (toggling && activeView.type === "node") {
-                      const base = activeView as Extract<ActiveView, { runId: string }>;
-                      setActiveView({ type: "run", clientId: base.clientId, snapshotId: base.snapshotId, runId: base.runId });
-                    }
-                  }}
+                  onClick={handleClick}
                   style={{ position: "absolute", left, top, width: NW, height: NH }}
                   className={cn(
                     "rounded-xl border shadow-sm text-xs font-medium flex items-center gap-2 px-3 transition-all",
                     isIngest
                       ? "bg-muted/50 border-border text-muted-foreground cursor-default"
+                      : isInCompare
+                      ? "bg-primary/10 border-primary text-foreground ring-1 ring-primary/40 cursor-pointer"
                       : isActive
                       ? (branchStyle?.active ?? "bg-primary border-primary text-primary-foreground")
                       : cn(
@@ -286,7 +307,11 @@ export function BottomRunTree() {
                         ),
                   )}
                 >
-                  {!isIngest && (
+                  {isInCompare ? (
+                    <span className="h-4 w-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center shrink-0">
+                      {compareIdx + 1}
+                    </span>
+                  ) : !isIngest ? (
                     <span
                       className={cn(
                         "h-2.5 w-2.5 rounded-full shrink-0",
@@ -294,10 +319,10 @@ export function BottomRunTree() {
                         isActive && "bg-white/90",
                       )}
                     />
-                  )}
+                  ) : null}
                   {isIngest
                     ? <Database className="w-3.5 h-3.5 shrink-0" />
-                    : <Save className={cn("w-3.5 h-3.5 shrink-0", !isActive && (branchStyle?.text ?? "text-muted-foreground"))} />}
+                    : <Save className={cn("w-3.5 h-3.5 shrink-0", !isActive && !isInCompare && (branchStyle?.text ?? "text-muted-foreground"))} />}
                   <span className="truncate flex-1 text-left">{node.label}</span>
                   {!isIngest && (
                     <span
