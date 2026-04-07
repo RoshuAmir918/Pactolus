@@ -5,14 +5,12 @@ import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   Plus,
   MoreHorizontal,
   Settings,
   Sun,
   Moon,
   LogOut,
-  GitBranch,
   FileText,
   Play,
   Layers,
@@ -67,7 +65,6 @@ import {
   activeSnapshotIdAtom,
   activeRunIdAtom,
   leftPaneModeAtom,
-  expandedSnapshotIdsAtom,
 } from "@/stores/workspace-ui";
 import { useTheme } from "@/providers/theme-provider";
 import { trpc } from "@/lib/trpc-client";
@@ -128,7 +125,8 @@ type LiveRun = {
   id: string;
   name: string;
   status: "running" | "completed" | "failed";
-  branchCount: number;
+  nodeCount: number;
+  createdByName: string;
 };
 
 // ── component ────────────────────────────────────────────────────────────────
@@ -142,7 +140,6 @@ export function LeftSidebar() {
   const [sidebarView, setSidebarView] = useAtom(sidebarViewAtom);
   const [snapshotClient, setSnapshotClient] = useAtom(sidebarSnapshotClientAtom);
   const [snapshotId, setSnapshotId] = useAtom(sidebarSnapshotIdAtom);
-  const [expandedRuns, setExpandedRuns] = useAtom(expandedSnapshotIdsAtom);
 
   const setActiveView = useSetAtom(activeViewAtom);
   const setActiveClientId = useSetAtom(activeClientIdAtom);
@@ -159,9 +156,6 @@ export function LeftSidebar() {
   // Live runs for the currently-open snapshot
   const [runs, setRuns] = useState<LiveRun[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
-
-  // Branch counts per run — fetched lazily
-  const [branchCounts, setBranchCounts] = useState<Record<string, number>>({});
 
   // New snapshot inline form state
   const [newSnapOrgId, setNewSnapOrgId] = useState<string | null>(null);
@@ -186,21 +180,16 @@ export function LeftSidebar() {
     }
     setRunsLoading(true);
     setRuns([]);
-    setBranchCounts({});
     trpc.operations.getRunsBySnapshot
       .query({ snapshotId, limit: 25 })
-      .then(async (result) => {
-        setRuns(result.runs.map((r) => ({ id: r.id, name: r.name, status: r.status, branchCount: 0 })));
-        // Fetch branch counts in parallel
-        const counts = await Promise.all(
-          result.runs.map((r) =>
-            trpc.operations.getRunBranches
-              .query({ runId: r.id })
-              .then((b) => ({ runId: r.id, count: b.branches.length }))
-              .catch(() => ({ runId: r.id, count: 0 })),
-          ),
-        );
-        setBranchCounts(Object.fromEntries(counts.map((c) => [c.runId, c.count])));
+      .then((result) => {
+        setRuns(result.runs.map((r) => ({
+          id: r.id,
+          name: r.name,
+          status: r.status,
+          nodeCount: r.nodeCount,
+          createdByName: r.createdByName,
+        })));
       })
       .catch(() => setRuns([]))
       .finally(() => setRunsLoading(false));
@@ -259,15 +248,6 @@ export function LeftSidebar() {
     setActiveSnapshotId(snapId);
     setActiveRunId(runId);
     setActiveView({ type: "run", clientId: org.id, snapshotId: snapId, runId });
-  }
-
-  function toggleRunExpand(runId: string) {
-    setExpandedRuns((prev: Set<string>) => {
-      const next = new Set(prev);
-      if (next.has(runId)) next.delete(runId);
-      else next.add(runId);
-      return next;
-    });
   }
 
   const activeView = useAtomValue(activeViewAtom);
@@ -349,48 +329,32 @@ export function LeftSidebar() {
                 {!runsLoading && runs.length === 0 && (
                   <p className="px-4 py-2 text-xs text-muted-foreground">No runs yet.</p>
                 )}
-                {runs.map((run) => {
-                  const bCount = branchCounts[run.id] ?? 0;
-                  return (
-                    <SidebarMenuItem key={run.id}>
-                      <SidebarMenuButton
-                        isActive={isRunActive(run.id)}
-                        onClick={() => selectRun(snapshotClient, snapshotId, run.id)}
-                        className="gap-2"
-                      >
-                        <Play className="w-3.5 h-3.5 shrink-0" />
-                        <span className="flex-1 truncate">{run.name}</span>
-                        <span className={cn(
-                          "text-[10px] px-1.5 py-0.5 rounded-full border shrink-0",
-                          run.status === "running"
-                            ? "text-emerald-600 border-emerald-200 bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800 dark:bg-emerald-950/30"
-                            : "text-muted-foreground border-border"
-                        )}>
-                          {run.status}
+                {runs.map((run) => (
+                  <SidebarMenuItem key={run.id}>
+                    <SidebarMenuButton
+                      isActive={isRunActive(run.id)}
+                      onClick={() => selectRun(snapshotClient, snapshotId, run.id)}
+                      className="gap-2 h-auto py-1.5"
+                    >
+                      <Play className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                        <span className="truncate text-xs">{run.name}</span>
+                        <span className="text-[10px] text-muted-foreground truncate">
+                          {run.createdByName}
+                          {run.nodeCount > 0 && ` · ${run.nodeCount} node${run.nodeCount !== 1 ? "s" : ""}`}
                         </span>
-                      </SidebarMenuButton>
-
-                      {bCount > 0 && (
-                        <SidebarMenuSub>
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton
-                              onClick={() => toggleRunExpand(run.id)}
-                              className="text-muted-foreground gap-1.5"
-                            >
-                              <GitBranch className="w-3 h-3" />
-                              <span>{bCount} branch{bCount !== 1 ? "es" : ""}</span>
-                              {expandedRuns.has(run.id) ? (
-                                <ChevronDown className="w-3 h-3 ml-auto" />
-                              ) : (
-                                <ChevronRight className="w-3 h-3 ml-auto" />
-                              )}
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        </SidebarMenuSub>
-                      )}
-                    </SidebarMenuItem>
-                  );
-                })}
+                      </div>
+                      <span className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded-full border shrink-0",
+                        run.status === "running"
+                          ? "text-emerald-600 border-emerald-200 bg-emerald-50 dark:text-emerald-400 dark:border-emerald-800 dark:bg-emerald-950/30"
+                          : "text-muted-foreground border-border"
+                      )}>
+                        {run.status}
+                      </span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

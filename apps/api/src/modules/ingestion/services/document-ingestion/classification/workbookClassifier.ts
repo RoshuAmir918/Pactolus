@@ -1,10 +1,7 @@
 import type { DiscoverAndExtractResult } from "../../discovery/discoverAndExtract";
 import { callClaudeTool } from "../anthropic/client";
-import {
-  buildNarrativePrompt,
-  buildWorkbookClassificationPrompt,
-} from "../anthropic/prompts";
-import { NARRATIVE_TOOL, WORKBOOK_CLASSIFICATION_TOOL } from "../anthropic/tools";
+import { buildWorkbookClassificationPrompt } from "../anthropic/prompts";
+import { WORKBOOK_CLASSIFICATION_TOOL } from "../anthropic/tools";
 import { asEnum, asInteger, asString, toConfidence } from "../shared/parsers";
 import type { ClaudeWorkbookRoutingResult, TargetDocument } from "../shared/types";
 
@@ -83,20 +80,4 @@ export async function classifyWorkbookWithClaude(input: {
     aiConfidence: toConfidence(parsed.aiConfidence),
     sheetClassifications,
   };
-}
-
-export async function tryClaudeNarrative(input: {
-  mode: "deterministic_summary" | "triangle_analysis";
-  payload: unknown;
-}): Promise<string | null> {
-  try {
-    const parsed = await callClaudeTool<{ narrative?: unknown }>({
-      prompt: buildNarrativePrompt(input.mode, input.payload),
-      tool: NARRATIVE_TOOL,
-      maxTokens: 800,
-    });
-    return asString(parsed.narrative);
-  } catch {
-    return null;
-  }
 }

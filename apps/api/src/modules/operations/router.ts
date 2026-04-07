@@ -16,6 +16,8 @@ import {
   getOperationNoteOutputSchema,
   getRunOperationsInputSchema,
   getRunOperationsOutputSchema,
+  getRunBranchesInputSchema,
+  getRunBranchesOutputSchema,
   getRunsBySnapshotInputSchema,
   getRunsBySnapshotOutputSchema,
   saveOperationCaptureInputSchema,
@@ -31,6 +33,7 @@ import { getOperationNote, type GetOperationNoteResult } from "./services/getOpe
 import { setOperationNote, type SetOperationNoteResult } from "./services/setOperationNote";
 import { getOperationAncestors, type GetOperationAncestorsResult } from "./services/getOperationAncestors";
 import { getRunOperations, type GetRunOperationsResult } from "./services/getRunOperations";
+import { getRunBranches, type GetRunBranchesResult } from "./services/getRunBranches";
 import { getRunsBySnapshot, type GetRunsBySnapshotResult } from "./services/getRunsBySnapshot";
 import { saveOperationCapture, type SaveOperationCaptureResult } from "./services/saveOperationCapture";
 import { getOperationCaptures, type GetOperationCapturesResult } from "./services/getOperationCaptures";
@@ -127,6 +130,13 @@ export const operationsRouter = router({
     .output(generateOperationLabelOutputSchema)
     .mutation(async ({ ctx, input }): Promise<GenerateOperationLabelResult> =>
       generateOperationLabel({ orgId: ctx.orgId, runId: input.runId, operationId: input.operationId }),
+    ),
+
+  getRunBranches: authenticatedProcedure
+    .input(getRunBranchesInputSchema)
+    .output(getRunBranchesOutputSchema)
+    .query(async ({ ctx, input }): Promise<GetRunBranchesResult> =>
+      getRunBranches({ orgId: ctx.orgId, runId: input.runId }),
     ),
 
   getRunsBySnapshot: authenticatedProcedure

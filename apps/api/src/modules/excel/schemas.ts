@@ -21,31 +21,6 @@ export const monitoredRegionSchema = z.object({
   evidence: z.array(z.string()).optional(),
 });
 
-export const getLiveHintsInputSchema = z.object({
-  snapshotId: z.uuid(),
-  strategy: z.enum(["ai"]).default("ai"),
-  targetColumns: z.array(z.string().min(1)).min(1),
-  maxSuggestionsPerColumn: z.number().int().positive().max(5).default(1),
-  sheetSlice: excelSheetSliceSchema,
-});
-
-export const getLiveHintsOutputSchema = z.object({
-  source: z.literal("context_ai"),
-  hints: z.array(
-    z.object({
-      targetColumn: z.string(),
-      suggestions: z.array(
-        z.object({
-          sourceColumn: z.string(),
-          confidence: z.number().min(0).max(1),
-          sourceContextDocumentId: z.uuid().nullable(),
-          matchMethod: z.literal("semantic_ai"),
-        }),
-      ),
-    }),
-  ),
-});
-
 export const detectRegionsInputSchema = z.object({
   snapshotId: z.uuid(),
   strategy: z.enum(["ai"]).default("ai"),

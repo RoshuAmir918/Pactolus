@@ -1,7 +1,7 @@
 import { and, count, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import dbClient from "@api/db/client";
-import { documentInsights, documentSheets, documents, documentTriangles, fileObjects } from "@db/schema";
+import { documentSheets, documents, documentTriangles, fileObjects } from "@db/schema";
 import type {
   DocumentIngestionStatusResult,
   GetDocumentIngestionStatusInput,
@@ -63,42 +63,26 @@ export function assertDocumentReady(fileStatus: string, deletedAt: Date | null) 
 export async function setDocumentPending(documentId: string) {
   await db
     .update(documents)
-    .set({
-      profileStatus: "pending",
-      aiStatus: "pending",
-      errorText: null,
-      updatedAt: new Date(),
-    })
+    .set({ profileStatus: "pending", aiStatus: "pending", errorText: null, updatedAt: new Date() })
     .where(eq(documents.id, documentId));
 }
 
 export async function setDocumentCompleted(documentId: string) {
   await db
     .update(documents)
-    .set({
-      profileStatus: "completed",
-      aiStatus: "completed",
-      errorText: null,
-      updatedAt: new Date(),
-    })
+    .set({ profileStatus: "completed", aiStatus: "completed", errorText: null, updatedAt: new Date() })
     .where(eq(documents.id, documentId));
 }
 
 export async function setDocumentFailed(documentId: string, errorText: string) {
   await db
     .update(documents)
-    .set({
-      profileStatus: "failed",
-      aiStatus: "failed",
-      errorText,
-      updatedAt: new Date(),
-    })
+    .set({ profileStatus: "failed", aiStatus: "failed", errorText, updatedAt: new Date() })
     .where(eq(documents.id, documentId));
 }
 
-export async function clearTrianglesAndInsights(documentId: string) {
+export async function clearTriangles(documentId: string) {
   await db.delete(documentTriangles).where(eq(documentTriangles.documentId, documentId));
-  await db.delete(documentInsights).where(eq(documentInsights.documentId, documentId));
 }
 
 export async function setDocumentClassificationFromRouting(input: {
@@ -121,10 +105,7 @@ export async function setDocumentClassificationFromRouting(input: {
 export async function updateDocumentSearchText(documentId: string, searchText: string | null) {
   await db
     .update(documents)
-    .set({
-      searchText,
-      updatedAt: new Date(),
-    })
+    .set({ searchText, updatedAt: new Date() })
     .where(eq(documents.id, documentId));
 }
 
@@ -151,10 +132,7 @@ export async function getDocumentIngestionStatus(
     .limit(1);
 
   if (!document) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Document not found",
-    });
+    throw new TRPCError({ code: "NOT_FOUND", message: "Document not found" });
   }
 
   const [sheetCounts] = await db
@@ -165,10 +143,6 @@ export async function getDocumentIngestionStatus(
     .select({ count: count() })
     .from(documentTriangles)
     .where(eq(documentTriangles.documentId, input.documentId));
-  const [insightCounts] = await db
-    .select({ count: count() })
-    .from(documentInsights)
-    .where(eq(documentInsights.documentId, input.documentId));
 
   return {
     documentId: document.id,
@@ -178,7 +152,6 @@ export async function getDocumentIngestionStatus(
     aiClassification: document.aiClassification,
     sheetCount: Number(sheetCounts?.count ?? 0),
     triangleCount: Number(triangleCounts?.count ?? 0),
-    insightCount: Number(insightCounts?.count ?? 0),
     errorText: document.errorText,
   };
 }

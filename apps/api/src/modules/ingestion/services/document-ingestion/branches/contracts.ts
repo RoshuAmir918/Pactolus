@@ -3,7 +3,6 @@ import { callClaudeTool } from "../anthropic/client";
 import { buildContractPrompt } from "../anthropic/prompts";
 import { CONTRACT_EXTRACTION_TOOL } from "../anthropic/tools";
 import { buildClaudeContractContent } from "../contracts/content";
-import { insertInsights } from "../persistence/insightsRepo";
 import { updateDocumentSearchText } from "../persistence/documentsRepo";
 import { asString } from "../shared/parsers";
 import type { TargetDocument } from "../shared/types";
@@ -53,19 +52,4 @@ export async function processContractBranch(input: {
   });
 
   await updateDocumentSearchText(target.documentId, asString(parsed.searchText) ?? null);
-
-  await insertInsights(target, [
-    {
-      insightType: "contract_terms",
-      title: "Contract Terms",
-      payloadJson: parsed.contractTerms ?? {},
-      confidence: "0.8000",
-    },
-    {
-      insightType: "narrative",
-      title: "Contract Narrative",
-      payloadJson: { narrative: asString(parsed.narrative) ?? "" },
-      confidence: "0.7500",
-    },
-  ]);
 }

@@ -148,7 +148,7 @@ export function RunsPanel(props: {
   snapshotId?: string;
   webUrl?: string;
 }) {
-  const [anchorId, setAnchorId] = useState<string | null>(null);
+  const [anchorId, setAnchorId] = useState<string | null>("ingest");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [saveContext, setSaveContext] = useState<SaveContext | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -157,7 +157,7 @@ export function RunsPanel(props: {
 
   // Reset when run changes
   useEffect(() => {
-    setAnchorId(null);
+    setAnchorId("ingest");
     setSelectedNodeId(null);
     setSaveContext(null);
   }, [props.runId]);

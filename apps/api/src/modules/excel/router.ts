@@ -8,9 +8,7 @@ import {
   extractScenarioAssumptionsOutputSchema,
   getMonitoredRegionsInputSchema,
   getMonitoredRegionsOutputSchema,
-  getLiveHintsInputSchema,
-  getLiveHintsOutputSchema,
-  ingestRegionEventInputSchema,
+ingestRegionEventInputSchema,
   ingestRegionEventOutputSchema,
   saveMonitoredRegionsInputSchema,
   saveMonitoredRegionsOutputSchema,
@@ -25,7 +23,6 @@ import {
   getMonitoredRegions,
   type GetMonitoredRegionsResult,
 } from "./services/getMonitoredRegions";
-import { getLiveHints, type GetLiveHintsResult } from "./services/getLiveHints";
 import { ingestRegionEvent, type IngestRegionEventResult } from "./services/ingestRegionEvent";
 import {
   saveMonitoredRegions,
@@ -104,19 +101,6 @@ export const excelRouter = router({
         address: input.address,
         eventType: input.eventType,
         detailsJson: input.detailsJson,
-      }),
-    ),
-
-  getLiveHints: authenticatedProcedure
-    .input(getLiveHintsInputSchema)
-    .output(getLiveHintsOutputSchema)
-    .query(async ({ ctx, input }): Promise<GetLiveHintsResult> =>
-      getLiveHints({
-        orgId: ctx.orgId,
-        snapshotId: input.snapshotId,
-        targetColumns: input.targetColumns,
-        maxSuggestionsPerColumn: input.maxSuggestionsPerColumn,
-        sheetSlice: input.sheetSlice,
       }),
     ),
 });

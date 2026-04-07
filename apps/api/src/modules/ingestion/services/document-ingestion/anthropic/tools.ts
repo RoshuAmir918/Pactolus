@@ -96,15 +96,3 @@ export const CONTRACT_EXTRACTION_TOOL: ClaudeToolDefinition = {
     required: ["contractTerms"],
   },
 };
-
-export const NARRATIVE_TOOL: ClaudeToolDefinition = {
-  name: "summarize_narrative",
-  description: "Produce concise narrative for provided dataset payload.",
-  input_schema: {
-    type: "object",
-    properties: {
-      narrative: { type: ["string", "null"] },
-    },
-    required: ["narrative"],
-  },
-};

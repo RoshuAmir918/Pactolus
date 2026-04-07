@@ -10,7 +10,7 @@ import { ensureAnthropicFileRegistered } from "./files/anthropicFiles";
 import { downloadFileToTemp } from "./files/download";
 import {
   assertDocumentReady,
-  clearTrianglesAndInsights,
+  clearTriangles,
   getDocumentIngestionStatus,
   getTargetDocument,
   setDocumentClassificationFromRouting,
@@ -102,7 +102,7 @@ export async function startDocumentIngestion(
     });
     await updateDocumentSearchText(target.documentId, deterministic.document.searchText ?? null);
 
-    await clearTrianglesAndInsights(target.documentId);
+    await clearTriangles(target.documentId);
 
     if (routing.documentType === "claims" || routing.documentType === "policies") {
       await processDeterministicBranch({

@@ -1,4 +1,16 @@
 import { z } from "zod";
+import { createSelectSchema } from "drizzle-zod";
+import { documentTypeEnum, fileObjectStatusEnum, documents } from "@db/schema";
+
+// Derived from DB table — stays in sync automatically
+const sourceDocumentSchema = createSelectSchema(documents).pick({
+  id: true,
+  fileObjectId: true,
+  filename: true,
+  fileExtension: true,
+  documentType: true,
+  fileSizeBytes: true,
+});
 
 export const getUploadUrlInputSchema = z.object({
   snapshotId: z.uuid(),
@@ -10,7 +22,7 @@ export const getUploadUrlInputSchema = z.object({
 export const getUploadUrlOutputSchema = z.object({
   bucket: z.string(),
   objectKey: z.string(),
-  uploadUrl: z.string().url(),
+  uploadUrl: z.url(),
   expiresAt: z.date(),
 });
 
@@ -22,13 +34,13 @@ export const completeUploadInputSchema = z.object({
   contentType: z.string().min(1),
   sizeBytes: z.number().int().positive(),
   sha256: z.string().min(1).optional(),
-  documentType: z.enum(["claims", "policies", "loss_triangles", "workbook_tool", "other"]).optional(),
+  documentType: z.enum(documentTypeEnum.enumValues).optional(),
 });
 
 export const completeUploadOutputSchema = z.object({
   fileObjectId: z.uuid(),
   documentId: z.uuid(),
-  status: z.enum(["pending", "ready", "failed", "deleted"]),
+  status: z.enum(fileObjectStatusEnum.enumValues),
 });
 
 export const getDownloadUrlInputSchema = z.object({
@@ -36,7 +48,7 @@ export const getDownloadUrlInputSchema = z.object({
 });
 
 export const getDownloadUrlOutputSchema = z.object({
-  downloadUrl: z.string().url(),
+  downloadUrl: z.url(),
   expiresAt: z.date(),
 });
 
@@ -46,7 +58,7 @@ export const listBySnapshotInputSchema = z.object({
 
 export const listBySnapshotOutputSchema = z.array(
   z.object({
-    id: z.string().uuid(),
+    id: z.uuid(),
     fileName: z.string(),
     contentType: z.string(),
     sizeBytes: z.number(),
@@ -63,29 +75,22 @@ export const getSourceDocumentsInputSchema = z.object({
 });
 
 export const getSourceDocumentsOutputSchema = z.object({
-  documents: z.array(
-    z.object({
-      id: z.uuid(),
-      fileObjectId: z.uuid(),
-      filename: z.string(),
-      fileExtension: z.string().nullable(),
-      documentType: z.string(),
-      fileSizeBytes: z.number(),
-    }),
-  ),
+  documents: z.array(sourceDocumentSchema),
 });
 
 export const getDocumentByIdInputSchema = z.object({
   documentId: z.uuid(),
 });
 
-export const getDocumentByIdOutputSchema = z.object({
-  id: z.uuid(),
-  fileObjectId: z.uuid(),
-  filename: z.string(),
-  fileExtension: z.string().nullable(),
-  fileSizeBytes: z.number(),
-}).nullable();
+export const getDocumentByIdOutputSchema = createSelectSchema(documents)
+  .pick({
+    id: true,
+    fileObjectId: true,
+    filename: true,
+    fileExtension: true,
+    fileSizeBytes: true,
+  })
+  .nullable();
 
 export const deleteFileInputSchema = z.object({
   fileObjectId: z.uuid(),

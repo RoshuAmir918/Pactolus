@@ -1,23 +1,5 @@
 import { asInteger, asString } from "../shared/parsers";
 
-export function buildNarrativePrompt(
-  mode: "deterministic_summary" | "triangle_analysis",
-  payload: unknown,
-): string {
-  return JSON.stringify({
-    task:
-      mode === "deterministic_summary"
-        ? "Provide concise narrative for deterministic dataset summary."
-        : "Provide concise actuarial narrative for extracted triangle payloads.",
-    instructions: [
-      "Respond by calling the provided tool with valid arguments only.",
-      "Do not repeat payload verbatim.",
-      "Focus on notable signals, caveats, and recommended next analysis actions.",
-    ],
-    payload,
-  });
-}
-
 export function buildTriangleExtractionPrompt(input: {
   fileName: string;
   sheet: Record<string, unknown>;

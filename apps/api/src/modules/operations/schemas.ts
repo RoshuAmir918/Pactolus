@@ -1,9 +1,38 @@
 import { z } from "zod";
-import { runOperationActorTypeEnum, runStatusEnum } from "@db/schema";
+import { createSelectSchema } from "drizzle-zod";
+import {
+  runOperationActorTypeEnum,
+  runStatusEnum,
+  runOperations,
+  runOperationCaptures,
+} from "@db/schema";
 
 export const runOperationTypeSchema = z.string().trim().min(1);
 export const runOperationActorTypeSchema = z.enum(runOperationActorTypeEnum.enumValues);
 export const runStatusSchema = z.enum(runStatusEnum.enumValues);
+
+// Derived from DB table — stays in sync automatically
+const runOperationOutputSchema = createSelectSchema(runOperations).pick({
+  id: true,
+  runId: true,
+  operationIndex: true,
+  operationType: true,
+  parentOperationId: true,
+  supersedesOperationId: true,
+  documentId: true,
+  parametersJson: true,
+  actorType: true,
+  actorId: true,
+  createdAt: true,
+});
+
+const runOperationCaptureOutputSchema = createSelectSchema(runOperationCaptures).pick({
+  id: true,
+  captureType: true,
+  payloadJson: true,
+  summaryText: true,
+  createdAt: true,
+});
 
 // ── run ───────────────────────────────────────────────────────────────────────
 
@@ -43,21 +72,7 @@ export const getRunOperationsInputSchema = z.object({
 });
 
 export const getRunOperationsOutputSchema = z.object({
-  operations: z.array(
-    z.object({
-      id: z.uuid(),
-      runId: z.uuid(),
-      operationIndex: z.number().int().positive(),
-      operationType: runOperationTypeSchema,
-      parentOperationId: z.uuid().nullable(),
-      supersedesOperationId: z.uuid().nullable(),
-      documentId: z.uuid().nullable(),
-      parametersJson: z.unknown(),
-      actorType: runOperationActorTypeSchema,
-      actorId: z.uuid().nullable(),
-      createdAt: z.date(),
-    }),
-  ),
+  operations: z.array(runOperationOutputSchema),
 });
 
 export const getOperationAncestorsInputSchema = z.object({
@@ -66,21 +81,7 @@ export const getOperationAncestorsInputSchema = z.object({
 });
 
 export const getOperationAncestorsOutputSchema = z.object({
-  operations: z.array(
-    z.object({
-      id: z.uuid(),
-      runId: z.uuid(),
-      operationIndex: z.number().int().positive(),
-      operationType: runOperationTypeSchema,
-      parentOperationId: z.uuid().nullable(),
-      supersedesOperationId: z.uuid().nullable(),
-      documentId: z.uuid().nullable(),
-      parametersJson: z.unknown(),
-      actorType: runOperationActorTypeSchema,
-      actorId: z.uuid().nullable(),
-      createdAt: z.date(),
-    }),
-  ),
+  operations: z.array(runOperationOutputSchema),
 });
 
 // ── captures ──────────────────────────────────────────────────────────────────
@@ -105,15 +106,7 @@ export const getOperationCapturesInputSchema = z.object({
 });
 
 export const getOperationCapturesOutputSchema = z.object({
-  captures: z.array(
-    z.object({
-      id: z.uuid(),
-      captureType: z.string(),
-      payloadJson: z.unknown(),
-      summaryText: z.string().nullable(),
-      createdAt: z.date(),
-    }),
-  ),
+  captures: z.array(runOperationCaptureOutputSchema),
 });
 
 // ── analyst notes ─────────────────────────────────────────────────────────────
@@ -161,6 +154,16 @@ export const generateOperationLabelOutputSchema = z.object({
   label: z.string(),
 });
 
+// ── run branches ─────────────────────────────────────────────────────────────
+
+export const getRunBranchesInputSchema = z.object({
+  runId: z.uuid(),
+});
+
+export const getRunBranchesOutputSchema = z.object({
+  branches: z.array(runOperationOutputSchema),
+});
+
 // ── runs listing ──────────────────────────────────────────────────────────────
 
 export const getRunsBySnapshotInputSchema = z.object({
@@ -168,6 +171,7 @@ export const getRunsBySnapshotInputSchema = z.object({
   limit: z.number().int().positive().max(100).optional(),
 });
 
+// createdByName is joined from users — can't derive from runs table directly
 export const getRunsBySnapshotOutputSchema = z.object({
   runs: z.array(
     z.object({
@@ -175,9 +179,9 @@ export const getRunsBySnapshotOutputSchema = z.object({
       name: z.string(),
       status: runStatusSchema,
       createdByName: z.string(),
+      nodeCount: z.number().int().nonnegative(),
       createdAt: z.date(),
       updatedAt: z.date(),
     }),
   ),
 });
-

@@ -1,6 +1,6 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { runOperationCaptures, runOperations, runs, snapshots } from "../index";
+import { runOperationCaptures, runOperations } from "../index";
 
 type DbLike = NodePgDatabase<Record<string, never>>;
 
@@ -87,41 +87,3 @@ export async function insertRunOperationCapture(
   return created;
 }
 
-type EnsureRunForSnapshotInput = {
-  orgId: string;
-  snapshotId: string;
-  createdByUserId: string;
-};
-
-export async function ensureRunForSnapshot(
-  db: DbLike,
-  input: EnsureRunForSnapshotInput,
-): Promise<typeof runs.$inferSelect> {
-  const [existing] = await db
-    .select()
-    .from(runs)
-    .where(and(eq(runs.orgId, input.orgId), eq(runs.snapshotId, input.snapshotId)))
-    .orderBy(desc(runs.createdAt))
-    .limit(1);
-
-  if (existing) return existing;
-
-  const [snapshot] = await db
-    .select({ label: snapshots.label })
-    .from(snapshots)
-    .where(eq(snapshots.id, input.snapshotId))
-    .limit(1);
-
-  const [created] = await db
-    .insert(runs)
-    .values({
-      orgId: input.orgId,
-      snapshotId: input.snapshotId,
-      name: snapshot?.label ? `${snapshot.label} Run` : "Initial Run",
-      status: "running",
-      createdByUserId: input.createdByUserId,
-    })
-    .returning();
-
-  return created;
-}

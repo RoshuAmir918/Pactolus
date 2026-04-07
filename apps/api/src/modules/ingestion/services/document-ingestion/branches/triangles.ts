@@ -2,8 +2,6 @@ import type { DiscoverAndExtractResult } from "../../discovery/discoverAndExtrac
 import { callClaudeTool } from "../anthropic/client";
 import { buildTriangleExtractionPrompt } from "../anthropic/prompts";
 import { TRIANGLE_EXTRACTION_TOOL } from "../anthropic/tools";
-import { tryClaudeNarrative } from "../classification/workbookClassifier";
-import { insertInsights } from "../persistence/insightsRepo";
 import {
   loadSheetIdsByIndex,
   loadTriangleCandidateSheets,
@@ -27,65 +25,30 @@ export async function processTriangleBranch(input: {
   const sheetsToExtract = triangleLikeSheets;
 
   const extractedTriangleRecords: Array<Record<string, unknown>> = [];
-  const narrativeParts: string[] = [];
   for (const sheet of sheetsToExtract) {
-    const extracted = await extractTrianglesForSheet({
-      target,
-      sheet,
-    });
+    const extracted = await extractTrianglesForSheet({ target, sheet });
     extractedTriangleRecords.push(...extracted.triangles);
-    if (extracted.narrative) {
-      narrativeParts.push(extracted.narrative);
-    }
   }
 
-  const triangles = await insertTrianglesFromExtracted({
+  await insertTrianglesFromExtracted({
     target,
     sheetIds,
     extractedTriangleRecords,
   });
 
-  const narrative =
-    (narrativeParts.length > 0 ? narrativeParts.join("\n\n") : null) ??
-    (await tryClaudeNarrative({
-      mode: "triangle_analysis",
-      payload: {
-        triangles: triangles.map((triangle) => ({
-          title: triangle.title,
-          segmentLabel: triangle.segmentLabel,
-          triangleType: triangle.triangleType,
-          normalizedTriangleJson: triangle.normalizedTriangleJson,
-        })),
-      },
-    }));
-
-  if (narrative) {
-    await insertInsights(target, [
-      {
-        insightType: "narrative",
-        title: "Triangle Analysis Narrative",
-        payloadJson: { narrative },
-        confidence: "0.8500",
-      },
-    ]);
-  }
 }
 
 async function extractTrianglesForSheet(input: {
   target: TargetDocument;
   sheet: Record<string, unknown>;
-}): Promise<{
-  triangles: Array<Record<string, unknown>>;
-  narrative: string | null;
-}> {
+}): Promise<{ triangles: Array<Record<string, unknown>> }> {
   const sheetIndex = asInteger((input.sheet as { sheetIndex?: unknown }).sheetIndex);
   const sheetName = asString((input.sheet as { sheetName?: unknown }).sheetName);
   if (sheetIndex === null) {
-    return { triangles: [], narrative: null };
+    return { triangles: [] };
   }
 
   const collected: Array<Record<string, unknown>> = [];
-  let lastNarrative: string | null = null;
   const debugEnabled = process.env.INGESTION_DEBUG_TRIANGLES === "1";
   const csvWindows = buildSheetCsvWindows(input.sheet);
   const sheetCSV = csvWindows[0]?.sheetCSV ?? "";
@@ -150,7 +113,6 @@ async function extractTrianglesForSheet(input: {
       });
     }
 
-    lastNarrative = asString(extraction.parsed.narrative) ?? lastNarrative;
     const normalized = normalizeTrianglesFromClaude(extraction.rawTrianglePayload);
     const extracted = normalized.filter((triangle) => {
       const extractedSheetIndex = asInteger((triangle as { sheetIndex?: unknown }).sheetIndex);
@@ -197,10 +159,7 @@ async function extractTrianglesForSheet(input: {
     });
   }
 
-  return {
-    triangles: collected,
-    narrative: lastNarrative ?? (sheetName ? `Processed triangle sheet ${sheetName}` : null),
-  };
+  return { triangles: collected };
 }
 
 async function callTriangleExtractionWithRetry(input: {
@@ -480,7 +439,7 @@ function coerceTriangleArrayPayload(parsed: { triangles?: unknown; [key: string]
     }
   }
 
-  for (const [key, value] of Object.entries(parsed)) {
+  for (const [, value] of Object.entries(parsed)) {
     if (!Array.isArray(value)) {
       continue;
     }

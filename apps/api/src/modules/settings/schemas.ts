@@ -1,6 +1,11 @@
 import { z } from "zod";
+import {
+  membershipRoleEnum,
+  membershipStatusEnum,
+  organizationInvitationRoleEnum,
+} from "@db/schema";
 
-export const membershipRoleSchema = z.enum(["admin", "manager", "analyst"]);
+export const membershipRoleSchema = z.enum(membershipRoleEnum.enumValues);
 
 export const settingsMembersInviteInputSchema = z.object({
   inviteEmail: z.string().trim().email(),
@@ -33,7 +38,7 @@ export const settingsMembersListOutputSchema = z.object({
       email: z.string(),
       fullName: z.string(),
       role: membershipRoleSchema,
-      status: z.enum(["active", "invited", "suspended"]),
+      status: z.enum(membershipStatusEnum.enumValues),
       joinedAt: z.date().nullable(),
     }),
   ),
@@ -41,7 +46,7 @@ export const settingsMembersListOutputSchema = z.object({
     z.object({
       id: z.uuid(),
       email: z.string(),
-      role: membershipRoleSchema,
+      role: z.enum(organizationInvitationRoleEnum.enumValues),
       expiresAt: z.date(),
       invitedAt: z.date(),
     }),

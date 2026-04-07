@@ -1,5 +1,4 @@
 import {
-  foreignKey,
   index,
   pgEnum,
   pgTable,
@@ -30,7 +29,6 @@ export const runs = pgTable(
     snapshotId: uuid("snapshot_id")
       .notNull()
       .references(() => snapshots.id, { onDelete: "cascade" }),
-    parentRunId: uuid("parent_run_id"),
     name: text("name").notNull(),
     status: runStatusEnum("status").notNull().default("draft"),
     createdByUserId: uuid("created_by_user_id")
@@ -40,14 +38,8 @@ export const runs = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    foreignKey({
-      columns: [table.parentRunId],
-      foreignColumns: [table.id],
-      name: "runs_parent_run_id_runs_id_fk",
-    }).onDelete("set null"),
     index("runs_org_id_idx").on(table.orgId),
     index("runs_snapshot_id_idx").on(table.snapshotId),
-    index("runs_parent_run_id_idx").on(table.parentRunId),
     index("runs_status_idx").on(table.status),
     index("runs_created_by_user_id_idx").on(table.createdByUserId),
   ],

@@ -74,7 +74,6 @@ export type AuthTRPC = {
           | "unknown";
         sheetCount: number;
         triangleCount: number;
-        insightCount: number;
         errorText: string | null;
       }>;
     };
@@ -96,7 +95,6 @@ export type AuthTRPC = {
           | "unknown";
         sheetCount: number;
         triangleCount: number;
-        insightCount: number;
         errorText: string | null;
       }>;
     };
@@ -179,8 +177,23 @@ export type AuthTRPC = {
           name: string;
           status: "running" | "completed" | "failed";
           createdByName: string;
+          nodeCount: number;
           createdAt: Date;
           updatedAt: Date;
+        }>;
+      }>;
+    };
+    getRunBranches: {
+      query: (input: { runId: string }) => Promise<{
+        branches: Array<{
+          id: string;
+          operationIndex: number;
+          operationType: string;
+          parametersJson: unknown;
+          parentOperationId: string | null;
+          supersedesOperationId: string | null;
+          documentId: string | null;
+          createdAt: Date;
         }>;
       }>;
     };

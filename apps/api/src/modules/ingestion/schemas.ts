@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  snapshotStatusEnum,
+  documentTypeEnum,
+  documentAiClassificationEnum,
+  documentProcessStatusEnum,
+} from "@db/schema";
 
 export const createSnapshotInputSchema = z.object({
   clientId: z.uuid().optional(),
@@ -8,7 +14,18 @@ export const createSnapshotInputSchema = z.object({
 
 export const createSnapshotOutputSchema = z.object({
   snapshotId: z.uuid(),
-  status: z.enum(["draft", "ingesting", "ready", "failed"]),
+  status: z.enum(snapshotStatusEnum.enumValues),
+});
+
+const ingestionStatusSchema = z.object({
+  documentId: z.uuid(),
+  profileStatus: z.enum(documentProcessStatusEnum.enumValues),
+  aiStatus: z.enum(documentProcessStatusEnum.enumValues),
+  documentType: z.enum(documentTypeEnum.enumValues),
+  aiClassification: z.enum(documentAiClassificationEnum.enumValues),
+  sheetCount: z.number().int().nonnegative(),
+  triangleCount: z.number().int().nonnegative(),
+  errorText: z.string().nullable(),
 });
 
 export const startDocumentIngestionInputSchema = z.object({
@@ -16,28 +33,11 @@ export const startDocumentIngestionInputSchema = z.object({
   documentId: z.uuid(),
 });
 
-export const startDocumentIngestionOutputSchema = z.object({
-  documentId: z.uuid(),
-  profileStatus: z.enum(["pending", "completed", "failed"]),
-  aiStatus: z.enum(["pending", "completed", "failed"]),
-  documentType: z.enum(["claims", "policies", "loss_triangles", "workbook_tool", "other"]),
-  aiClassification: z.enum([
-    "claims",
-    "policies",
-    "loss_triangles",
-    "workbook_tool",
-    "other",
-    "unknown",
-  ]),
-  sheetCount: z.number().int().nonnegative(),
-  triangleCount: z.number().int().nonnegative(),
-  insightCount: z.number().int().nonnegative(),
-  errorText: z.string().nullable(),
-});
+export const startDocumentIngestionOutputSchema = ingestionStatusSchema;
 
 export const getDocumentIngestionStatusInputSchema = z.object({
   snapshotId: z.uuid(),
   documentId: z.uuid(),
 });
 
-export const getDocumentIngestionStatusOutputSchema = startDocumentIngestionOutputSchema;
+export const getDocumentIngestionStatusOutputSchema = ingestionStatusSchema;

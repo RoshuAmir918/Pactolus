@@ -16,14 +16,6 @@ export type DocumentAiClassification =
   | "other"
   | "unknown";
 
-export type InsightType =
-  | "segment_manifest"
-  | "aggregate_stats"
-  | "quality_flags"
-  | "contract_terms"
-  | "narrative"
-  | "other";
-
 export type ClaudeToolDefinition = {
   name: string;
   description: string;
@@ -70,6 +62,5 @@ export type DocumentIngestionStatusResult = {
   aiClassification: DocumentAiClassification;
   sheetCount: number;
   triangleCount: number;
-  insightCount: number;
   errorText: string | null;
 };
