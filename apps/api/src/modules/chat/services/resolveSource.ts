@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import dbClient from "@api/db/client";
 import {
   documentSheets,
+  documentTriangles,
   runPipelineContext,
   runOperationCaptures,
   runOperationNotes,
@@ -35,6 +36,35 @@ export async function resolveSource(
         sampleRows: sheet.sampleRowsJson,
         detectedTables: sheet.detectedTablesJson,
         totalRows: sheet.rowCountEstimate,
+      },
+      null,
+      2,
+    );
+  }
+
+  if (sourceType === "document_triangle") {
+    const [tri] = await db
+      .select({
+        title: documentTriangles.title,
+        segmentLabel: documentTriangles.segmentLabel,
+        triangleType: documentTriangles.triangleType,
+        headerLabelsJson: documentTriangles.headerLabelsJson,
+        normalizedTriangleJson: documentTriangles.normalizedTriangleJson,
+        confidence: documentTriangles.confidence,
+      })
+      .from(documentTriangles)
+      .where(and(eq(documentTriangles.id, sourceId), eq(documentTriangles.orgId, orgId)))
+      .limit(1);
+
+    if (!tri) return "Triangle not found.";
+    return JSON.stringify(
+      {
+        title: tri.title,
+        segmentLabel: tri.segmentLabel,
+        triangleType: tri.triangleType,
+        headerLabels: tri.headerLabelsJson,
+        matrix: tri.normalizedTriangleJson,
+        confidence: tri.confidence,
       },
       null,
       2,

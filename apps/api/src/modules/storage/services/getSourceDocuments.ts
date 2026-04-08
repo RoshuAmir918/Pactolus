@@ -9,22 +9,7 @@ export type GetSourceDocumentsInput = {
   snapshotId: string;
 };
 
-export type SourceDocumentItem = {
-  id: string;
-  fileObjectId: string;
-  filename: string;
-  fileExtension: string | null;
-  documentType: string;
-  fileSizeBytes: number;
-};
-
-export type GetSourceDocumentsResult = {
-  documents: SourceDocumentItem[];
-};
-
-export async function getSourceDocuments(
-  input: GetSourceDocumentsInput,
-): Promise<GetSourceDocumentsResult> {
+export async function getSourceDocuments(input: GetSourceDocumentsInput) {
   const rows = await db
     .select({
       id: documents.id,
@@ -56,3 +41,6 @@ export async function getSourceDocuments(
     })),
   };
 }
+
+export type GetSourceDocumentsResult = Awaited<ReturnType<typeof getSourceDocuments>>;
+export type SourceDocumentItem = GetSourceDocumentsResult["documents"][number];

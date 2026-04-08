@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import dbClient from "@api/db/client";
 import {
   documentSheets,
+  documentTriangles,
   documents,
   runPipelineContext,
   runOperationCaptures,
@@ -11,40 +12,25 @@ import {
 
 const { db } = dbClient;
 
-export type SheetRow = {
-  id: string;
-  filename: string;
-  sheetName: string;
-  sheetType: string;
-  rowCountEstimate: number | null;
-  headersJson: unknown;
-  sheetAboutJson: unknown;
-};
+export async function loadSnapshotTriangles(snapshotId: string, orgId: string) {
+  return db
+    .select({
+      id: documentTriangles.id,
+      filename: documents.filename,
+      sheetName: documentSheets.sheetName,
+      title: documentTriangles.title,
+      segmentLabel: documentTriangles.segmentLabel,
+      triangleType: documentTriangles.triangleType,
+      confidence: documentTriangles.confidence,
+    })
+    .from(documentTriangles)
+    .innerJoin(documentSheets, eq(documentSheets.id, documentTriangles.sheetId))
+    .innerJoin(documents, eq(documents.id, documentTriangles.documentId))
+    .where(and(eq(documentTriangles.snapshotId, snapshotId), eq(documentTriangles.orgId, orgId)))
+    .orderBy(documents.filename, documentSheets.sheetIndex);
+}
 
-export type PipelineContextRow = {
-  id: string;
-  operationType: string;
-  contextType: string;
-  dataJson: unknown;
-};
-
-export type CaptureRow = {
-  id: string;
-  operationId: string;
-  operationType: string;
-  captureType: string;
-  summaryText: string | null;
-};
-
-export type FocusedNode = {
-  label: string | null;
-  operationIndex: number;
-  createdAt: Date | null;
-  noteText: string | null;
-  captures: Array<{ id: string; captureType: string; summaryText: string | null }>;
-};
-
-export async function loadSnapshotSheets(snapshotId: string, orgId: string): Promise<SheetRow[]> {
+export async function loadSnapshotSheets(snapshotId: string, orgId: string) {
   return db
     .select({
       id: documentSheets.id,
@@ -61,10 +47,7 @@ export async function loadSnapshotSheets(snapshotId: string, orgId: string): Pro
     .orderBy(documents.filename, documentSheets.sheetIndex);
 }
 
-export async function loadRunContext(runId: string): Promise<{
-  pipelineContext: PipelineContextRow[];
-  captures: CaptureRow[];
-}> {
+export async function loadRunContext(runId: string) {
   const [pipelineRows, captureRows] = await Promise.all([
     db
       .select({
@@ -97,10 +80,7 @@ export async function loadRunContext(runId: string): Promise<{
   };
 }
 
-export async function loadFocusedNode(
-  runId: string,
-  operationId: string,
-): Promise<FocusedNode | null> {
+export async function loadFocusedNode(runId: string, operationId: string) {
   const [op] = await db
     .select({
       parametersJson: runOperations.parametersJson,
@@ -139,3 +119,9 @@ export async function loadFocusedNode(
     captures,
   };
 }
+
+export type TriangleRow = Awaited<ReturnType<typeof loadSnapshotTriangles>>[number];
+export type SheetRow = Awaited<ReturnType<typeof loadSnapshotSheets>>[number];
+export type PipelineContextRow = Awaited<ReturnType<typeof loadRunContext>>["pipelineContext"][number];
+export type CaptureRow = Awaited<ReturnType<typeof loadRunContext>>["captures"][number];
+export type FocusedNode = NonNullable<Awaited<ReturnType<typeof loadFocusedNode>>>;

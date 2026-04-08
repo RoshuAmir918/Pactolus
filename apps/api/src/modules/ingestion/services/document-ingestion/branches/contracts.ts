@@ -46,8 +46,6 @@ export async function processContractBranch(input: {
     }),
     tool: CONTRACT_EXTRACTION_TOOL,
     contentBlocks: content.contentBlocks,
-    snapshotId: target.snapshotId,
-    includeSnapshotFiles: true,
     maxTokens: 1800,
   });
 

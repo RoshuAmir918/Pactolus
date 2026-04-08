@@ -9,17 +9,7 @@ export type GetDocumentByIdInput = {
   documentId: string;
 };
 
-export type GetDocumentByIdResult = {
-  id: string;
-  fileObjectId: string;
-  filename: string;
-  fileExtension: string | null;
-  fileSizeBytes: number;
-};
-
-export async function getDocumentById(
-  input: GetDocumentByIdInput,
-): Promise<GetDocumentByIdResult | null> {
+export async function getDocumentById(input: GetDocumentByIdInput) {
   const rows = await db
     .select({
       id: documents.id,
@@ -43,3 +33,5 @@ export async function getDocumentById(
     fileSizeBytes: Number(row.fileSizeBytes),
   };
 }
+
+export type GetDocumentByIdResult = NonNullable<Awaited<ReturnType<typeof getDocumentById>>>;

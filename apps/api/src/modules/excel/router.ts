@@ -6,12 +6,8 @@ import {
   detectWorkbookRegionsOutputSchema,
   extractScenarioAssumptionsInputSchema,
   extractScenarioAssumptionsOutputSchema,
-  getMonitoredRegionsInputSchema,
-  getMonitoredRegionsOutputSchema,
-ingestRegionEventInputSchema,
+  ingestRegionEventInputSchema,
   ingestRegionEventOutputSchema,
-  saveMonitoredRegionsInputSchema,
-  saveMonitoredRegionsOutputSchema,
 } from "./schemas";
 import {
   detectRegionsWithAi,
@@ -19,15 +15,7 @@ import {
 } from "./services/detectRegionsWithAi";
 import { detectWorkbookRegions } from "./services/detectWorkbookRegions";
 import { extractScenarioAssumptions } from "./services/extractScenarioAssumptions";
-import {
-  getMonitoredRegions,
-  type GetMonitoredRegionsResult,
-} from "./services/getMonitoredRegions";
 import { ingestRegionEvent, type IngestRegionEventResult } from "./services/ingestRegionEvent";
-import {
-  saveMonitoredRegions,
-  type SaveMonitoredRegionsResult,
-} from "./services/saveMonitoredRegions";
 
 export const excelRouter = router({
   detectWorkbookRegions: authenticatedProcedure
@@ -65,30 +53,6 @@ export const excelRouter = router({
         candidates: detected.candidates,
       };
     }),
-
-  saveMonitoredRegions: authenticatedProcedure
-    .input(saveMonitoredRegionsInputSchema)
-    .output(saveMonitoredRegionsOutputSchema)
-    .mutation(async ({ ctx, input }): Promise<SaveMonitoredRegionsResult> =>
-      saveMonitoredRegions({
-        orgId: ctx.orgId,
-        userId: ctx.userId,
-        snapshotId: input.snapshotId,
-        sheetName: input.sheetName,
-        regions: input.regions,
-      }),
-    ),
-
-  getMonitoredRegions: authenticatedProcedure
-    .input(getMonitoredRegionsInputSchema)
-    .output(getMonitoredRegionsOutputSchema)
-    .query(async ({ ctx, input }): Promise<GetMonitoredRegionsResult> =>
-      getMonitoredRegions({
-        orgId: ctx.orgId,
-        snapshotId: input.snapshotId,
-        sheetName: input.sheetName,
-      }),
-    ),
 
   ingestRegionEvent: authenticatedProcedure
     .input(ingestRegionEventInputSchema)

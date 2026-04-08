@@ -21,8 +21,6 @@ export async function classifyWorkbookWithClaude(input: {
       deterministicSheets: input.deterministic.sheets,
     }),
     tool: WORKBOOK_CLASSIFICATION_TOOL,
-    snapshotId: input.target.snapshotId,
-    includeSnapshotFiles: true,
     maxTokens: 1200,
   });
 

@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
   },
   reactCompiler: true,
   webpack(config) {
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      "@shared": path.join(monorepoRoot, "apps/shared/src"),
+    };
+
     // ExcelJS uses Node.js built-ins; stub them out for browser bundles
     config.resolve.fallback = {
       ...config.resolve.fallback,

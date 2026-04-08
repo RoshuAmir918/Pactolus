@@ -9,19 +9,7 @@ export type ListBySnapshotInput = {
   snapshotId: string;
 };
 
-export type ListBySnapshotItem = {
-  id: string;
-  fileName: string;
-  contentType: string;
-  sizeBytes: number;
-  createdAt: Date;
-};
-
-export type ListBySnapshotResult = ListBySnapshotItem[];
-
-export async function listBySnapshot(
-  input: ListBySnapshotInput,
-): Promise<ListBySnapshotResult> {
+export async function listBySnapshot(input: ListBySnapshotInput) {
   const rows = await db
     .select({
       id: fileObjects.id,
@@ -48,3 +36,6 @@ export async function listBySnapshot(
     createdAt: r.createdAt,
   }));
 }
+
+export type ListBySnapshotResult = Awaited<ReturnType<typeof listBySnapshot>>;
+export type ListBySnapshotItem = ListBySnapshotResult[number];

@@ -10,11 +10,9 @@ export const excelSheetSliceSchema = z.object({
   sampleRows: z.array(z.array(z.string())).max(25).optional(),
 });
 
-export const monitoredRegionTypeSchema = z.enum(["input", "output"]);
-
 export const monitoredRegionSchema = z.object({
   address: z.string().min(1),
-  regionType: monitoredRegionTypeSchema,
+  regionType: z.enum(["input", "output"]),
   confidencePercent: z.number().int().min(0).max(100),
   userConfirmed: z.boolean().default(false),
   reason: z.string().optional(),
@@ -31,39 +29,6 @@ export const detectRegionsInputSchema = z.object({
 export const detectRegionsOutputSchema = z.object({
   source: z.literal("ai"),
   candidates: z.array(monitoredRegionSchema),
-});
-
-export const saveMonitoredRegionsInputSchema = z.object({
-  snapshotId: z.uuid(),
-  sheetName: z.string().min(1),
-  regions: z.array(monitoredRegionSchema).min(1),
-});
-
-export const saveMonitoredRegionsOutputSchema = z.object({
-  regions: z.array(
-    monitoredRegionSchema.extend({
-      id: z.uuid(),
-      snapshotId: z.uuid(),
-      sheetName: z.string(),
-      status: z.enum(["active", "archived"]),
-    }),
-  ),
-});
-
-export const getMonitoredRegionsInputSchema = z.object({
-  snapshotId: z.uuid(),
-  sheetName: z.string().min(1),
-});
-
-export const getMonitoredRegionsOutputSchema = z.object({
-  regions: z.array(
-    monitoredRegionSchema.extend({
-      id: z.uuid(),
-      snapshotId: z.uuid(),
-      sheetName: z.string(),
-      status: z.enum(["active", "archived"]),
-    }),
-  ),
 });
 
 export const detectWorkbookRegionsInputSchema = z.object({

@@ -1,10 +1,3 @@
-import { and, eq } from "drizzle-orm";
-import dbClient from "@api/db/client";
-import { documentSheets, documents } from "@db/schema";
-
-const { db } = dbClient;
-
-const ANTHROPIC_FILES_BETA_HEADER = "files-api-2025-04-14";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 
 export type WorkbookSheetInput = {
@@ -35,53 +28,11 @@ export async function detectWorkbookRegions(input: {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
 
-  // Load ingested document metadata so Claude understands the source data
-  const docSheets = await db
-    .select({
-      id: documentSheets.id,
-      filename: documents.filename,
-      sheetName: documentSheets.sheetName,
-      sheetType: documentSheets.sheetType,
-      rowCountEstimate: documentSheets.rowCountEstimate,
-      headersJson: documentSheets.headersJson,
-      sheetAboutJson: documentSheets.sheetAboutJson,
-    })
-    .from(documentSheets)
-    .innerJoin(documents, eq(documents.id, documentSheets.documentId))
-    .where(
-      and(
-        eq(documentSheets.snapshotId, input.snapshotId),
-        eq(documentSheets.orgId, input.orgId),
-      ),
-    )
-    .orderBy(documents.filename, documentSheets.sheetIndex);
-
-  const systemPrompt = buildSystemPrompt(docSheets, input.sheets);
-
-  const fetchSourceTool = {
-    name: "fetch_source",
-    description:
-      "Retrieve detailed data from a specific ingested source document sheet to help understand what data is available to fill input regions.",
-    input_schema: {
-      type: "object",
-      properties: {
-        source_id: {
-          type: "string",
-          description: "The UUID of the document_sheet shown in the context above",
-        },
-        reason: {
-          type: "string",
-          description: "Brief explanation of why you need this data",
-        },
-      },
-      required: ["source_id", "reason"],
-    },
-  };
+  const systemPrompt = buildSystemPrompt(input.sheets);
 
   const reportRegionsTool = {
     name: "report_regions",
-    description:
-      "Report the identified input and output regions across the workbook sheets. Call this once you have analysed all sheets.",
+    description: "Report the identified input and output regions across the workbook sheets.",
     input_schema: {
       type: "object",
       properties: {
@@ -97,12 +48,12 @@ export async function detectWorkbookRegions(input: {
                 items: {
                   type: "object",
                   properties: {
-                    address: { type: "string", description: "Excel range address of the data, e.g. B13:N22" },
-                    description: { type: "string", description: "Short user-facing label, e.g. 'Loss development triangle' or 'Commission rate inputs'. No internal reasoning." },
+                    address: { type: "string", description: "Excel range address, e.g. B13:N22" },
+                    description: { type: "string", description: "Short user-facing label, e.g. 'Loss development triangle'. No internal reasoning." },
                     reason: { type: "string", description: "Internal reasoning for why this is an input region" },
                     confidence_percent: { type: "number" },
-                    col_header_address: { type: "string", description: "Address of the row containing column headers for this region, e.g. B12:N12. Omit if there are no meaningful column labels." },
-                    row_header_address: { type: "string", description: "Address of the column containing row labels for this region, e.g. A13:A22. Omit if there are no meaningful row labels." },
+                    col_header_address: { type: "string", description: "Address of the row containing column headers, e.g. B12:N12. Omit if none." },
+                    row_header_address: { type: "string", description: "Address of the column containing row labels, e.g. A13:A22. Omit if none." },
                   },
                   required: ["address", "description", "reason", "confidence_percent"],
                 },
@@ -113,11 +64,11 @@ export async function detectWorkbookRegions(input: {
                   type: "object",
                   properties: {
                     address: { type: "string" },
-                    description: { type: "string", description: "Short user-facing label, e.g. 'Net loss ratio' or 'Ceded premium summary'. No internal reasoning." },
+                    description: { type: "string", description: "Short user-facing label, e.g. 'Net loss ratio'. No internal reasoning." },
                     reason: { type: "string" },
                     confidence_percent: { type: "number" },
-                    col_header_address: { type: "string", description: "Address of the row containing column headers for this region. Omit if none." },
-                    row_header_address: { type: "string", description: "Address of the column containing row labels for this region. Omit if none." },
+                    col_header_address: { type: "string", description: "Address of the row containing column headers. Omit if none." },
+                    row_header_address: { type: "string", description: "Address of the column containing row labels. Omit if none." },
                   },
                   required: ["address", "description", "reason", "confidence_percent"],
                 },
@@ -139,113 +90,59 @@ export async function detectWorkbookRegions(input: {
     },
   };
 
-  type ContentBlock = { type: string; id?: string; name?: string; input?: unknown; text?: string };
-
-  let currentMessages: unknown[] = [
-    {
-      role: "user",
-      content:
-        "Analyse the workbook sheets I have described and identify all input and output regions. Call report_regions with your findings.",
-    },
-  ];
-
   const model = process.env.CLAUDE_MODEL?.trim()?.replace(/-latest$/, "") ?? DEFAULT_MODEL;
 
-  for (let turn = 0; turn < 5; turn++) {
-    const response = await callAnthropic({ apiKey, model, systemPrompt, messages: currentMessages, tools: [fetchSourceTool, reportRegionsTool] });
-    const content = response.content as ContentBlock[];
+  const response = await callAnthropic({
+    apiKey,
+    model,
+    systemPrompt,
+    messages: [
+      {
+        role: "user",
+        content: "Analyse the workbook sheets and identify all input and output regions. Call report_regions with your findings.",
+      },
+    ],
+    tools: [reportRegionsTool],
+  });
 
-    const toolUseBlocks = content.filter((b) => b.type === "tool_use" && b.id && b.input);
+  type ContentBlock = { type: string; id?: string; name?: string; input?: unknown };
+  const content = response.content as ContentBlock[];
+  const reportBlock = content.find((b) => b.type === "tool_use" && b.name === "report_regions");
 
-    if (toolUseBlocks.length === 0) {
-      return { sheets: [], promptMessage: null };
-    }
-
-    currentMessages = [...currentMessages, { role: "assistant" as const, content }];
-
-    // Check if any block is report_regions — if so, use it and return
-    const reportBlock = toolUseBlocks.find((b) => b.name === "report_regions");
-    if (reportBlock) {
-      const toolInput = reportBlock.input as {
-        sheets: Array<{
-          sheet_name: string;
-          input_regions: Array<{ address: string; description: string; reason: string; confidence_percent: number; col_header_address?: string; row_header_address?: string }>;
-          output_regions: Array<{ address: string; description: string; reason: string; confidence_percent: number; col_header_address?: string; row_header_address?: string }>;
-        }>;
-        prompt_message: string | null;
-      };
-
-      const sheets: DetectedSheetRegions[] = toolInput.sheets.map((s) => ({
-        sheetName: s.sheet_name,
-        inputRegions: s.input_regions.map((r) => ({
-          address: r.address,
-          description: r.description,
-          reason: r.reason,
-          confidencePercent: r.confidence_percent,
-          colHeaderAddress: r.col_header_address,
-          rowHeaderAddress: r.row_header_address,
-        })),
-        outputRegions: s.output_regions.map((r) => ({
-          address: r.address,
-          description: r.description,
-          reason: r.reason,
-          confidencePercent: r.confidence_percent,
-          colHeaderAddress: r.col_header_address,
-          rowHeaderAddress: r.row_header_address,
-        })),
-      }));
-
-      return { sheets, promptMessage: toolInput.prompt_message ?? null };
-    }
-
-    // All other blocks must be fetch_source — resolve all in parallel then return one tool_result message
-    const toolResults = await Promise.all(
-      toolUseBlocks.map(async (b) => {
-        if (b.name === "fetch_source") {
-          const toolInput = b.input as { source_id: string; reason: string };
-          const fetchedContent = await resolveDocumentSheet(toolInput.source_id, input.orgId);
-          return { type: "tool_result", tool_use_id: b.id!, content: fetchedContent };
-        }
-        return { type: "tool_result", tool_use_id: b.id!, content: "Unknown tool." };
-      }),
-    );
-
-    currentMessages = [
-      ...currentMessages,
-      { role: "user" as const, content: toolResults },
-    ];
+  if (!reportBlock?.input) {
+    return { sheets: [], promptMessage: null };
   }
 
-  return { sheets: [], promptMessage: null };
-}
+  const toolInput = reportBlock.input as {
+    sheets: Array<{
+      sheet_name: string;
+      input_regions: Array<{ address: string; description: string; reason: string; confidence_percent: number; col_header_address?: string; row_header_address?: string }>;
+      output_regions: Array<{ address: string; description: string; reason: string; confidence_percent: number; col_header_address?: string; row_header_address?: string }>;
+    }>;
+    prompt_message: string | null;
+  };
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+  const sheets: DetectedSheetRegions[] = toolInput.sheets.map((s) => ({
+    sheetName: s.sheet_name,
+    inputRegions: s.input_regions.map((r) => ({
+      address: r.address,
+      description: r.description,
+      reason: r.reason,
+      confidencePercent: r.confidence_percent,
+      colHeaderAddress: r.col_header_address,
+      rowHeaderAddress: r.row_header_address,
+    })),
+    outputRegions: s.output_regions.map((r) => ({
+      address: r.address,
+      description: r.description,
+      reason: r.reason,
+      confidencePercent: r.confidence_percent,
+      colHeaderAddress: r.col_header_address,
+      rowHeaderAddress: r.row_header_address,
+    })),
+  }));
 
-async function resolveDocumentSheet(sourceId: string, orgId: string): Promise<string> {
-  const [sheet] = await db
-    .select({
-      sheetName: documentSheets.sheetName,
-      headersJson: documentSheets.headersJson,
-      sampleRowsJson: documentSheets.sampleRowsJson,
-      detectedTablesJson: documentSheets.detectedTablesJson,
-      rowCountEstimate: documentSheets.rowCountEstimate,
-    })
-    .from(documentSheets)
-    .where(and(eq(documentSheets.id, sourceId), eq(documentSheets.orgId, orgId)))
-    .limit(1);
-
-  if (!sheet) return "Source not found.";
-  return JSON.stringify(
-    {
-      sheetName: sheet.sheetName,
-      headers: sheet.headersJson,
-      sampleRows: sheet.sampleRowsJson,
-      detectedTables: sheet.detectedTablesJson,
-      totalRows: sheet.rowCountEstimate,
-    },
-    null,
-    2,
-  );
+  return { sheets, promptMessage: toolInput.prompt_message ?? null };
 }
 
 async function callAnthropic(input: {
@@ -260,11 +157,12 @@ async function callAnthropic(input: {
     max_tokens: 2048,
     system: input.systemPrompt,
     tools: input.tools,
+    tool_choice: { type: "tool", name: "report_regions" },
     messages: input.messages,
   });
 
-  const MAX_RETRIES = 4;
-  let delay = 15_000;
+  const MAX_RETRIES = 3;
+  let delay = 5_000;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -273,7 +171,6 @@ async function callAnthropic(input: {
         "content-type": "application/json",
         "x-api-key": input.apiKey,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
       },
       body,
     });
@@ -281,7 +178,7 @@ async function callAnthropic(input: {
     if (response.status === 429 && attempt < MAX_RETRIES) {
       const retryAfter = Number(response.headers.get("retry-after") ?? 0) * 1000;
       await new Promise((r) => setTimeout(r, retryAfter || delay));
-      delay = Math.min(delay * 2, 60_000);
+      delay = Math.min(delay * 2, 30_000);
       continue;
     }
 
@@ -295,40 +192,26 @@ async function callAnthropic(input: {
   throw new Error("Anthropic API rate limit exceeded after retries.");
 }
 
-function buildSystemPrompt(
-  docSheets: Array<{
-    id: string;
-    filename: string;
-    sheetName: string;
-    sheetType: string;
-    rowCountEstimate: number | null;
-    headersJson: unknown;
-    sheetAboutJson: unknown;
-  }>,
-  workbookSheets: WorkbookSheetInput[],
-): string {
+function buildSystemPrompt(workbookSheets: WorkbookSheetInput[]): string {
   const parts: string[] = [
     "You are analysing an Excel workbook used for actuarial / reinsurance analysis.",
-    "Your job: for each sheet in the workbook, identify input regions (cells the analyst must fill in) and output regions (calculated results).",
+    "Your job: for each sheet, identify input regions (cells the analyst must fill in) and output regions (calculated results).",
     "",
     "Region type key: F=formula (computed — NEVER an input), N=hardcoded number (potential input), T=hardcoded text (label/header), E=empty.",
-    "Font color: blue (#4472C4 or similar) = input convention, black/empty = default.",
+    "Font color: blue (#4472C4 or similar) = input convention.",
     "",
     "Rules:",
-    "- Use fetch_source FIRST to read the ingested source documents and understand the workbook's semantic structure.",
-    "- F regions are outputs (formula-driven). N regions are potential inputs.",
-    "- A meaningful INPUT region: an N-type region of 2+ cells that represents data the analyst enters (triangle values, premiums, LDF selections, assumptions). Blue font strongly confirms this.",
-    "- Loss triangles are triangular — the lower-right cells are empty (future periods). Report the full enclosing rectangle (e.g. B13:N22), not individual rows.",
-    "- A meaningful OUTPUT region: an F-type region representing computed results.",
+    "- F regions are outputs. N regions are potential inputs.",
+    "- A meaningful INPUT region: an N-type range of 2+ cells representing data the analyst enters (triangle values, premiums, LDF selections, assumptions). Blue font strongly confirms this.",
+    "- Loss triangles are triangular — lower-right cells are empty (future periods). Report the full enclosing rectangle (e.g. B13:N22).",
+    "- A meaningful OUTPUT region: an F-type range representing computed results.",
     "- Single isolated N cells that are clearly metadata (a date, a name) are NOT input regions.",
-    "- Report address ranges in standard Excel notation (e.g. B13:N22).",
+    "- Report addresses in standard Excel notation (e.g. B13:N22).",
     "- If a sheet has no meaningful inputs or outputs, omit it.",
-    "- Once you have enough information, call report_regions.",
     "",
+    "## Workbook Sheets",
   ];
 
-  // Active workbook sheets
-  parts.push("## Active Workbook Sheets");
   for (const sheet of workbookSheets) {
     parts.push(`\n**Sheet: "${sheet.sheetName}"** (${sheet.rowCount} rows × ${sheet.columnCount} cols)`);
     if (sheet.headers.length > 0) {
@@ -341,7 +224,6 @@ function buildSystemPrompt(
       }
     }
     if (sheet.regions && sheet.regions.length > 0) {
-      // Only show N (number) and F (formula) regions — T/E are noise; cap at 40 per sheet
       const meaningful = sheet.regions.filter((r) => r.type === "N" || r.type === "F").slice(0, 40);
       if (meaningful.length > 0) {
         parts.push("  Regions (address | type | font):");
@@ -350,28 +232,6 @@ function buildSystemPrompt(
           parts.push(`    ${r.address} | ${r.type}${colorNote}`);
         }
       }
-    }
-  }
-
-  // Ingested source documents
-  parts.push("\n## Ingested Source Documents (available via fetch_source)");
-  const byDoc = new Map<string, typeof docSheets>();
-  for (const s of docSheets) {
-    if (!byDoc.has(s.filename)) byDoc.set(s.filename, []);
-    byDoc.get(s.filename)!.push(s);
-  }
-  if (byDoc.size === 0) {
-    parts.push("None.");
-  }
-  for (const [filename, sheets] of byDoc) {
-    parts.push(`\n**${filename}**`);
-    for (const s of sheets) {
-      const about =
-        s.sheetAboutJson && typeof s.sheetAboutJson === "object"
-          ? ((s.sheetAboutJson as Record<string, unknown>).summary as string | undefined) ?? ""
-          : "";
-      parts.push(`  - Sheet "${s.sheetName}" [${s.sheetType}] (id: ${s.id})`);
-      if (about) parts.push(`    ${about}`);
     }
   }
 

@@ -4,30 +4,7 @@ import { organizationInvitations, memberships, users } from "@db/schema";
 
 const { db } = dbClient;
 
-export type OrgMemberRow = {
-  membershipId: string;
-  userId: string;
-  email: string;
-  fullName: string;
-  role: "admin" | "manager" | "analyst";
-  status: "active" | "invited" | "suspended";
-  joinedAt: Date | null;
-};
-
-export type PendingInviteRow = {
-  id: string;
-  email: string;
-  role: "admin" | "manager" | "analyst";
-  expiresAt: Date;
-  invitedAt: Date;
-};
-
-export type ListOrgMembersResult = {
-  members: OrgMemberRow[];
-  pendingInvites: PendingInviteRow[];
-};
-
-export async function listOrgMembers(orgId: string): Promise<ListOrgMembersResult> {
+export async function listOrgMembers(orgId: string) {
   const memberRows = await db
     .select({
       membershipId: memberships.id,
@@ -43,23 +20,13 @@ export async function listOrgMembers(orgId: string): Promise<ListOrgMembersResul
     .where(and(eq(memberships.orgId, orgId), eq(memberships.status, "active")))
     .orderBy(asc(users.email));
 
-  const members: OrgMemberRow[] = memberRows.map((row) => ({
-    membershipId: row.membershipId,
-    userId: row.userId,
-    email: row.email,
-    fullName: row.fullName,
-    role: row.role,
-    status: row.status,
-    joinedAt: row.joinedAt,
-  }));
-
   const pendingInvitesRaw = await db
     .select({
       id: organizationInvitations.id,
       email: organizationInvitations.email,
       role: organizationInvitations.role,
       expiresAt: organizationInvitations.expiresAt,
-      createdAt: organizationInvitations.createdAt,
+      invitedAt: organizationInvitations.createdAt,
     })
     .from(organizationInvitations)
     .where(
@@ -70,16 +37,12 @@ export async function listOrgMembers(orgId: string): Promise<ListOrgMembersResul
     )
     .orderBy(asc(organizationInvitations.email));
 
-  const pendingInvites: PendingInviteRow[] = pendingInvitesRaw.map((row) => ({
-    id: row.id,
-    email: row.email,
-    role: row.role,
-    expiresAt: row.expiresAt,
-    invitedAt: row.createdAt,
-  }));
-
   return {
-    members,
-    pendingInvites,
+    members: memberRows,
+    pendingInvites: pendingInvitesRaw,
   };
 }
+
+export type ListOrgMembersResult = Awaited<ReturnType<typeof listOrgMembers>>;
+export type OrgMemberRow = ListOrgMembersResult["members"][number];
+export type PendingInviteRow = ListOrgMembersResult["pendingInvites"][number];

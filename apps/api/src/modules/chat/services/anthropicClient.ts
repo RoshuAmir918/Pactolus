@@ -1,4 +1,3 @@
-const ANTHROPIC_FILES_BETA_HEADER = "files-api-2025-04-14";
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 
 export async function callAnthropic(input: {
@@ -27,7 +26,6 @@ export async function callAnthropic(input: {
         "content-type": "application/json",
         "x-api-key": input.apiKey,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": ANTHROPIC_FILES_BETA_HEADER,
       },
       body,
     });

@@ -142,23 +142,33 @@ export async function generateOperationLabel(
       `Output results:\n${outputRegions.slice(0, 5).map((r) => `  - ${formatRegion(r)}`).join("\n")}`,
     );
 
+  const hasRegionData = inputRegions.length > 0 || outputRegions.length > 0;
+
   const prompt = [
     "You are labeling a saved scenario in a reinsurance analysis workbook.",
     "Generate a concise label (2–5 words, title case) that captures what makes this scenario distinct.",
     "Focus on the key assumption or output — e.g. 'Base Loss Ratio', 'IBNR +20% Stress', 'Cat Excess Layer'.",
-    "Do NOT include quotes.",
+    "Do NOT include quotes in the label.",
     "",
+    ...(hasRegionData
+      ? [
+          "Also generate a brief summary (under 120 characters) describing what this workbook tool does — its analytical purpose based on what the input and output regions represent.",
+          "Focus on the type of analysis, not the specific values. E.g. 'Takes paid loss triangles as input and produces ultimate loss ratio and IBNR estimates.'",
+          "",
+        ]
+      : []),
     ...contextParts,
   ].join("\n");
 
   // 8. Call Claude
   let rawLabel = "Saved";
+  let regionSummary: string | null = null;
   try {
-    const result = await callClaudeTool<{ label: string }>({
+    const result = await callClaudeTool<{ label: string; summary?: string }>({
       prompt,
       tool: {
         name: "set_label",
-        description: "Set the scenario label",
+        description: "Set the scenario label and optional summary",
         input_schema: {
           type: "object",
           properties: {
@@ -166,13 +176,21 @@ export async function generateOperationLabel(
               type: "string",
               description: "A 2–5 word title-case label for the saved scenario",
             },
+            ...(hasRegionData && {
+              summary: {
+                type: "string",
+                description:
+                  "Brief description of what this workbook tool does analytically, based on what the input and output regions represent. Under 120 characters.",
+              },
+            }),
           },
           required: ["label"],
         },
       },
-      maxTokens: 64,
+      maxTokens: 150,
     });
     rawLabel = result.label?.trim() || "Saved";
+    regionSummary = result.summary?.trim() || null;
   } catch {
     rawLabel = narrativeText?.slice(0, 40) || "Saved";
   }
@@ -191,6 +209,14 @@ export async function generateOperationLabel(
     .update(runOperations)
     .set({ parametersJson: { ...existingParams, label: finalLabel } })
     .where(eq(runOperations.id, input.operationId));
+
+  // 11. Write summary back to region_values capture summaryText
+  if (regionSummary && regionCapture) {
+    await db
+      .update(runOperationCaptures)
+      .set({ summaryText: regionSummary })
+      .where(eq(runOperationCaptures.id, regionCapture.id));
+  }
 
   return { label: finalLabel };
 }

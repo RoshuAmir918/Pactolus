@@ -1,5 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
-import { ExternalLink, FileSpreadsheet, FileText, RefreshCw, User, Clock } from "lucide-react";
+import {
+  ExternalLink,
+  FileSpreadsheet,
+  FileText,
+  RefreshCw,
+  User,
+  Clock,
+} from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -7,8 +14,6 @@ import type { MonitoredRegion, OperationRecord, SourceDocument } from "@/feature
 import type { SaveContext, TreeNode } from "../types";
 import { RunTreeCanvas } from "../tree/RunTreeCanvas";
 import { allNodes, withSkeletons } from "../tree/layout";
-
-// ── operation detail card ─────────────────────────────────────────────────────
 
 function OperationCard(props: {
   operation: OperationRecord;
@@ -37,19 +42,17 @@ function OperationCard(props: {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 flex flex-col gap-2">
-      {/* Label + index */}
+    <div className="rounded-xl border border-border bg-background px-3 py-2.5 flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <span className="text-[11px] font-semibold text-foreground truncate">
           {params?.label ?? "Saved"}
         </span>
-        <span className="text-[8px] text-muted-foreground font-mono flex-shrink-0 mt-0.5">
+        <span className="text-[9px] text-foreground/70 font-mono flex-shrink-0 mt-0.5">
           #{props.operation.operationIndex}
         </span>
       </div>
 
-      {/* Author + date */}
-      <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+      <div className="flex items-center gap-2 text-[10px] text-foreground/70">
         {author && (
           <span className="flex items-center gap-1">
             <User className="size-2.5" />
@@ -64,14 +67,6 @@ function OperationCard(props: {
         )}
       </div>
 
-      {/* Narrative */}
-      {params?.narrative && (
-        <p className="text-[10px] text-muted-foreground leading-snug border-l-2 border-border pl-2">
-          {params.narrative}
-        </p>
-      )}
-
-      {/* Actions */}
       <div className="flex gap-1.5">
         <button
           type="button"
@@ -104,28 +99,32 @@ function SaveForm(props: {
 }) {
   const [narrative, setNarrative] = useState("");
   return (
-    <div className="rounded-xl border border-border bg-muted/30 px-3 py-2.5 flex flex-col gap-2">
-      <p className="text-[10px] font-medium text-foreground">{props.contextLabel}</p>
+    <div className="rounded-xl border border-border bg-background px-3 py-2.5 flex flex-col gap-2">
+      <p className="text-[11px] font-semibold text-foreground">{props.contextLabel}</p>
       <Textarea
         autoFocus
         value={narrative}
         onChange={(e) => setNarrative(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Escape") props.onCancel(); }}
         placeholder="e.g. Excluded 2017 cat year, blended BF/CL 50/50…"
-        className="text-[10px] min-h-[60px] resize-none"
+        className="text-[10px] min-h-[60px] resize-none border-border bg-background"
       />
       <div className="flex gap-1.5">
-        <Button variant="outline" size="sm" className="flex-1 h-7 text-[10px]" onClick={props.onCancel}>
+        <button
+          type="button"
+          onClick={props.onCancel}
+          className="flex-1 h-7 text-[10px] rounded-lg border border-border bg-background hover:bg-muted transition-colors font-medium text-foreground"
+        >
           Cancel
-        </Button>
-        <Button
-          size="sm"
-          className="flex-1 h-7 text-[10px]"
+        </button>
+        <button
+          type="button"
           disabled={props.isSaving}
           onClick={() => props.onSave(narrative)}
+          className="flex-1 h-7 text-[10px] rounded-lg border border-border bg-background hover:bg-muted transition-colors font-medium text-foreground disabled:opacity-50"
         >
           {props.isSaving ? "Saving…" : "Save"}
-        </Button>
+        </button>
       </div>
     </div>
   );
@@ -214,7 +213,6 @@ export function RunsPanel(props: {
   const selectedOp = selectedNodeId && selectedNodeId !== "ingest"
     ? props.operations.find((o) => o.id === selectedNodeId) ?? null
     : null;
-
   const saveContextLabel = saveContext?.kind === "update"
     ? "Update this save — what changed?"
     : saveContext?.kind === "par"

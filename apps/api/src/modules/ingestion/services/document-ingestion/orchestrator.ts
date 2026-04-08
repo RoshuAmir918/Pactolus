@@ -6,7 +6,6 @@ import { processDeterministicBranch } from "./branches/claimsPolicies";
 import { processContractBranch, shouldAllowClaudeDocument } from "./branches/contracts";
 import { processTriangleBranch } from "./branches/triangles";
 import { classifyWorkbookWithClaude } from "./classification/workbookClassifier";
-import { ensureAnthropicFileRegistered } from "./files/anthropicFiles";
 import { downloadFileToTemp } from "./files/download";
 import {
   assertDocumentReady,
@@ -68,12 +67,6 @@ export async function startDocumentIngestion(
           : [],
       });
     }
-
-    await ensureAnthropicFileRegistered({
-      target,
-      deterministic,
-      localFilePath,
-    });
 
     await upsertSheetsFromDeterministic({
       target,

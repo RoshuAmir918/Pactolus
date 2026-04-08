@@ -1,4 +1,4 @@
-import { loadSnapshotSheets, loadRunContext, loadFocusedNode } from "./loadContext";
+import { loadSnapshotSheets, loadSnapshotTriangles, loadRunContext, loadFocusedNode } from "./loadContext";
 import { buildSystemPrompt } from "./systemPrompt";
 import { callAnthropic, CHAT_TOOLS } from "./anthropicClient";
 import { resolveSource } from "./resolveSource";
@@ -32,14 +32,16 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured");
 
   // Load context from DB
-  const [sheets, runCtx, focusedNode] = await Promise.all([
+  const [sheets, triangles, runCtx, focusedNode] = await Promise.all([
     loadSnapshotSheets(input.snapshotId, input.orgId),
+    loadSnapshotTriangles(input.snapshotId, input.orgId),
     input.runId ? loadRunContext(input.runId) : Promise.resolve({ pipelineContext: [], captures: [] }),
     input.runId && input.operationId ? loadFocusedNode(input.runId, input.operationId) : Promise.resolve(null),
   ]);
 
   const systemPrompt = buildSystemPrompt(
     sheets,
+    triangles,
     runCtx.pipelineContext,
     runCtx.captures,
     focusedNode,

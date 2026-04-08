@@ -1,7 +1,8 @@
-import type { SheetRow, PipelineContextRow, CaptureRow, FocusedNode } from "./loadContext";
+import type { SheetRow, TriangleRow, PipelineContextRow, CaptureRow, FocusedNode } from "./loadContext";
 
 export function buildSystemPrompt(
   sheets: SheetRow[],
+  triangles: TriangleRow[],
   pipelineContext: PipelineContextRow[],
   captures: CaptureRow[],
   focusedNode: FocusedNode | null,
@@ -92,6 +93,18 @@ export function buildSystemPrompt(
       parts.push(`  - Sheet "${sheet.sheetName}" [${sheet.sheetType}${rowsLabel}] (id: ${sheet.id})`);
       if (headers) parts.push(`    Headers: ${headers}`);
       if (about) parts.push(`    About: ${about}`);
+    }
+  }
+
+  if (triangles.length > 0) {
+    parts.push("\n## Loss Triangles");
+    parts.push(
+      "Use fetch_source with source_type=document_triangle and the triangle id to retrieve the full matrix and header labels.",
+    );
+    for (const tri of triangles) {
+      const label = tri.title ?? tri.segmentLabel ?? "Untitled";
+      const confidence = tri.confidence != null ? ` (confidence: ${tri.confidence})` : "";
+      parts.push(`  - [${tri.triangleType}] "${label}" — ${tri.filename} / ${tri.sheetName}${confidence} (id: ${tri.id})`);
     }
   }
 

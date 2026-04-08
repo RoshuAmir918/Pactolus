@@ -10,28 +10,13 @@ export type GetRunsBySnapshotInput = {
   limit?: number;
 };
 
-export type GetRunsBySnapshotResult = {
-  runs: Array<{
-    id: string;
-    name: string;
-    status: "draft" | "running" | "awaiting_confirmation" | "ready" | "failed" | "locked";
-    createdByName: string;
-    nodeCount: number;
-    createdAt: Date;
-    updatedAt: Date;
-  }>;
-};
-
-export async function getRunsBySnapshot(
-  input: GetRunsBySnapshotInput,
-): Promise<GetRunsBySnapshotResult> {
+export async function getRunsBySnapshot(input: GetRunsBySnapshotInput) {
   const result = await db
     .select({
       id: runs.id,
       name: runs.name,
       status: runs.status,
       createdByName: users.fullName,
-      // Count scenario_snapshot ops that are not superseded by another op in this run
       nodeCount: sql<number>`(
         SELECT COUNT(*)::int FROM ${runOperations} ro
         WHERE ro.run_id = ${runs.id}
@@ -53,3 +38,5 @@ export async function getRunsBySnapshot(
 
   return { runs: result };
 }
+
+export type GetRunsBySnapshotResult = Awaited<ReturnType<typeof getRunsBySnapshot>>;
