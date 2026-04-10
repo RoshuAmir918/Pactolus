@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Calendar, Check, ChevronDown, CircleDot, FileText, Hash, Loader2, NotebookPen, Save, ArrowDown, ArrowUp } from "lucide-react";
+import { Calendar, Check, ChevronDown, CircleDot, FileText, FileSpreadsheet, Hash, Loader2, NotebookPen, Save, ArrowDown, ArrowUp } from "lucide-react";
 import { NodeDetailView, toViewerNode, type ViewerCapture } from "@shared/workspace/node-viewer";
+import { DocumentPreview, type PreviewDoc } from "@/components/workspace/document-preview";
+import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc-client";
 
 type Operation = {
@@ -28,6 +30,7 @@ export function NodeDetailPanel({ runId, stepId }: Props) {
   const [note, setNote] = useState<string>("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<PreviewDoc | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,8 +105,24 @@ export function NodeDetailPanel({ runId, stepId }: Props) {
     }
   }
 
+  async function openWorkbook() {
+    if (!operation?.documentId) return;
+    const doc = await trpc.storage.getDocumentById.query({ documentId: operation.documentId });
+    if (!doc) return;
+    setPreviewDoc({ id: doc.id, fileObjectId: doc.fileObjectId, name: doc.filename, sizeBytes: doc.fileSizeBytes });
+  }
+
   return (
+    <>
     <NodeDetailView
+      headerAction={
+        operation?.documentId ? (
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={openWorkbook}>
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            Open
+          </Button>
+        ) : undefined
+      }
       node={
         operation
           ? toViewerNode({
@@ -142,5 +161,7 @@ export function NodeDetailPanel({ runId, stepId }: Props) {
         expand: (expanded) => <ChevronDown className={expanded ? "w-3 h-3 rotate-180" : "w-3 h-3"} />,
       }}
     />
+    {previewDoc && <DocumentPreview doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
+    </>
   );
 }

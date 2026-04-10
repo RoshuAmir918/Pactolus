@@ -251,11 +251,17 @@ export async function readAllRegionValues(regions: MonitoredRegion[]): Promise<R
   if (relevant.length === 0) return [];
 
   return Excel.run(async (context) => {
+    // How many columns to the left of the identified rowHeaderAddress we scan.
+    // Reading a wider range and taking the rightmost non-empty value per row handles
+    // merged cells of any width: a B:C merge stores the value in B and leaves C empty,
+    // so scanning A:C and picking rightmost non-empty always lands on B.
+    const MERGE_SCAN_COLS = 4;
+
     type Fetch = {
       region: MonitoredRegion;
       range: Excel.Range;
       colHeaderRange: Excel.Range | null;
-      rowHeaderRange: Excel.Range | null;
+      rowHeaderScanRange: Excel.Range | null;
     };
     const fetches: Fetch[] = [];
 
@@ -265,37 +271,66 @@ export async function readAllRegionValues(regions: MonitoredRegion[]): Promise<R
       range.load("values");
 
       let colHeaderRange: Excel.Range | null = null;
-      let rowHeaderRange: Excel.Range | null = null;
+      let rowHeaderScanRange: Excel.Range | null = null;
 
       if (region.colHeaderAddress) {
         colHeaderRange = sheet.getRange(region.colHeaderAddress);
         colHeaderRange.load("values");
       }
       if (region.rowHeaderAddress) {
-        rowHeaderRange = sheet.getRange(region.rowHeaderAddress);
-        rowHeaderRange.load("values");
+        const scanAddr = buildScanRange(region.rowHeaderAddress, MERGE_SCAN_COLS);
+        rowHeaderScanRange = sheet.getRange(scanAddr);
+        rowHeaderScanRange.load("values");
       }
 
-      fetches.push({ region, range, colHeaderRange, rowHeaderRange });
+      fetches.push({ region, range, colHeaderRange, rowHeaderScanRange });
     }
 
     await context.sync();
 
-    return fetches.map(({ region, range, colHeaderRange, rowHeaderRange }) => ({
-      address: region.address,
-      sheetName: region.sheetName!,
-      regionType: region.regionType,
-      description: region.description,
-      reason: region.reason,
-      colHeaders: colHeaderRange
-        ? ((colHeaderRange.values?.[0] ?? []) as unknown[]).map((v) => (v === null || v === "" ? "" : String(v)))
-        : undefined,
-      rowHeaders: rowHeaderRange
-        ? ((rowHeaderRange.values ?? []) as unknown[][]).map((row) => (row[0] === null || row[0] === "" ? "" : String(row[0])))
-        : undefined,
-      values: (range.values ?? []) as unknown[][],
-    }));
+    return fetches.map(({ region, range, colHeaderRange, rowHeaderScanRange }) => {
+      let rowHeaders: string[] | undefined;
+      if (rowHeaderScanRange) {
+        // For each row, take the rightmost non-empty value.
+        // In a merged B:C cell, B has the value and C is ""; rightmost non-empty = B. ✓
+        rowHeaders = ((rowHeaderScanRange.values ?? []) as unknown[][]).map((row) => {
+          for (let i = row.length - 1; i >= 0; i--) {
+            if (row[i] !== null && row[i] !== "" && row[i] !== undefined) return String(row[i]);
+          }
+          return "";
+        });
+      }
+
+      return {
+        address: region.address,
+        sheetName: region.sheetName!,
+        regionType: region.regionType,
+        description: region.description,
+        reason: region.reason,
+        colHeaders: colHeaderRange
+          ? ((colHeaderRange.values?.[0] ?? []) as unknown[]).map((v) => (v === null || v === "" ? "" : String(v)))
+          : undefined,
+        rowHeaders,
+        values: (range.values ?? []) as unknown[][],
+      };
+    });
   });
+}
+
+/**
+ * Expands a single-column range leftward by `scanCols` columns.
+ * e.g. buildScanRange("C36:C41", 4) → "A36:C41"  (clamped at column A)
+ * Reading this wider range and taking the rightmost non-empty value per row
+ * correctly resolves merged cells of any width without needing extra API calls.
+ */
+function buildScanRange(address: string, scanCols: number): string {
+  const match = address.match(/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/i);
+  if (!match) return address;
+  const endColNum = columnToNumber((match[3] ?? match[1]).toUpperCase());
+  const endRow = match[4] ?? match[2];
+  const startRow = match[2];
+  const scanStartNum = Math.max(1, endColNum - scanCols);
+  return `${colToLetter(scanStartNum)}${startRow}:${colToLetter(endColNum)}${endRow}`;
 }
 
 export async function selectRange(sheetName: string | undefined, address: string): Promise<void> {

@@ -1,21 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAtomValue, useAtom, useSetAtom } from "jotai";
 import { Save, Loader2, Database } from "lucide-react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  useNodesState,
+  useEdgesState,
+  Handle,
+  Position,
+  type Node,
+  type Edge,
+  type NodeProps,
+  BackgroundVariant,
+} from "@xyflow/react";
 import { cn } from "@/lib/utils";
 import { activeViewAtom, activeNodeIdAtom, compareNodeIdsAtom, type ActiveView } from "@/stores/workspace-ui";
 import { trpc } from "@/lib/trpc-client";
-
-// ── Layout constants (left-to-right) ─────────────────────────────────────────
-//   lx = horizontal position (depth axis)
-//   ly = vertical position   (sibling axis)
-
-const NW      = 152;  // node width
-const NH      = 44;   // node height
-const SIBLING = 16;   // vertical gap between siblings
-const LEVEL   = 72;   // horizontal gap between parent and child
-const PADDING = 16;
+import { buildBranchStyleMap, type BranchStyle } from "@shared/workspace/run-tree/branch-styles";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,31 +34,54 @@ type Operation = {
   createdAt: Date;
 };
 
-type TreeNode = {
+type NodeData = {
+  label: string;
+  meta: string;
+  branchRootId: string;
+  isIngest: boolean;
   op: Operation | null;
+  branchStyle: BranchStyle | null;
+};
+
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+
+const NW = 160;
+const NH = 44;
+const SIBLING = 16;
+const LEVEL = 80;
+
+type LayoutNode = {
   id: string;
   label: string;
   meta: string;
   branchRootId: string;
-  children: TreeNode[];
+  isIngest: boolean;
+  op: Operation | null;
+  children: LayoutNode[];
   lx: number;
   ly: number;
 };
 
-// ── Tree building ─────────────────────────────────────────────────────────────
+function subtreeH(node: LayoutNode): number {
+  if (!node.children.length) return NH;
+  return Math.max(NH, node.children.reduce((s, c) => s + subtreeH(c), 0) + SIBLING * (node.children.length - 1));
+}
 
-function buildTree(operations: Operation[]): TreeNode {
-  const ingest: TreeNode = {
-    op: null,
-    id: "ingest",
-    label: "Ingest",
-    meta: "source data",
-    branchRootId: "ingest",
-    children: [],
-    lx: 0,
-    ly: 0,
-  };
-  const nodeById = new Map<string, TreeNode>();
+function assignPos(node: LayoutNode, x: number, y: number) {
+  const sh = subtreeH(node);
+  node.lx = x;
+  node.ly = y + sh / 2;
+  let cy = y;
+  for (const c of node.children) {
+    assignPos(c, x + NW + LEVEL, cy);
+    cy += subtreeH(c) + SIBLING;
+  }
+}
+
+function buildLayoutTree(operations: Operation[]): LayoutNode {
+  const ingest: LayoutNode = { id: "ingest", label: "Ingest", meta: "source data", branchRootId: "ingest", isIngest: true, op: null, children: [], lx: 0, ly: 0 };
+  const nodeById = new Map<string, LayoutNode>();
   nodeById.set("ingest", ingest);
 
   const supersededIds = new Set(operations.map((o) => o.supersedesOperationId).filter(Boolean) as string[]);
@@ -68,19 +95,12 @@ function buildTree(operations: Operation[]): TreeNode {
   for (const op of visible) {
     const p = op.parametersJson as { label?: string } | null;
     const label = p?.label ?? "Saved";
-    const meta = op.createdAt
-      ? new Date(op.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-      : "";
+    const meta = op.createdAt ? new Date(op.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
     const parent = op.parentOperationId ? (nodeById.get(op.parentOperationId) ?? ingest) : ingest;
-    const node: TreeNode = {
-      op,
-      id: op.id,
-      label,
-      meta,
+    const node: LayoutNode = {
+      op, id: op.id, label, meta,
       branchRootId: parent.id === "ingest" ? op.id : parent.branchRootId,
-      children: [],
-      lx: 0,
-      ly: 0,
+      isIngest: false, children: [], lx: 0, ly: 0,
     };
     nodeById.set(op.id, node);
     parent.children.push(node);
@@ -90,74 +110,108 @@ function buildTree(operations: Operation[]): TreeNode {
   return ingest;
 }
 
-// In LR layout, "subtreeH" is the vertical span of a subtree
-function subtreeH(node: TreeNode): number {
-  if (!node.children.length) return NH;
-  return Math.max(NH, node.children.reduce((s, c) => s + subtreeH(c), 0) + SIBLING * (node.children.length - 1));
-}
-
-// x = depth (horizontal), y = top of this node's subtree slot
-function assignPos(node: TreeNode, x: number, y: number) {
-  const sh = subtreeH(node);
-  node.lx = x;
-  node.ly = y + sh / 2;   // center of this subtree
-  let cy = y;
-  for (const c of node.children) {
-    assignPos(c, x + NW + LEVEL, cy);
-    cy += subtreeH(c) + SIBLING;
-  }
-}
-
-function allNodes(node: TreeNode, acc: TreeNode[] = []): TreeNode[] {
+function allLayoutNodes(node: LayoutNode, acc: LayoutNode[] = []): LayoutNode[] {
   acc.push(node);
-  node.children.forEach((c) => allNodes(c, acc));
+  node.children.forEach((c) => allLayoutNodes(c, acc));
   return acc;
 }
 
-type BranchStyle = {
-  dot: string;
-  text: string;
-  border: string;
-  hover: string;
-  active: string;
-  edge: string;
-};
+function toReactFlow(root: LayoutNode): { nodes: Node<NodeData>[]; edges: Edge[] } {
+  const allNodes = allLayoutNodes(root);
+  const branchStyleMap = buildBranchStyleMap(allNodes);
+  const nodes: Node<NodeData>[] = allNodes.map((n) => ({
+    id: n.id,
+    type: "scenarioNode",
+    position: { x: n.lx, y: n.ly - NH / 2 },
+    data: {
+      label: n.label,
+      meta: n.meta,
+      branchRootId: n.branchRootId,
+      isIngest: n.isIngest,
+      op: n.op,
+      branchStyle: branchStyleMap.get(n.branchRootId) ?? null,
+    },
+    draggable: false,
+    style: { width: NW, height: NH },
+  }));
 
-const pastelBranchStyles: BranchStyle[] = [
-  { dot: "bg-emerald-400", text: "text-emerald-700 dark:text-emerald-300", border: "border-emerald-300/80 dark:border-emerald-800/80", hover: "hover:bg-emerald-50/70 dark:hover:bg-emerald-950/35", active: "bg-emerald-500 border-emerald-500 text-white", edge: "#6ee7b7" },
-  { dot: "bg-sky-400", text: "text-sky-700 dark:text-sky-300", border: "border-sky-300/80 dark:border-sky-800/80", hover: "hover:bg-sky-50/70 dark:hover:bg-sky-950/35", active: "bg-sky-500 border-sky-500 text-white", edge: "#7dd3fc" },
-  { dot: "bg-violet-400", text: "text-violet-700 dark:text-violet-300", border: "border-violet-300/80 dark:border-violet-800/80", hover: "hover:bg-violet-50/70 dark:hover:bg-violet-950/35", active: "bg-violet-500 border-violet-500 text-white", edge: "#c4b5fd" },
-  { dot: "bg-amber-400", text: "text-amber-700 dark:text-amber-300", border: "border-amber-300/80 dark:border-amber-800/80", hover: "hover:bg-amber-50/70 dark:hover:bg-amber-950/35", active: "bg-amber-500 border-amber-500 text-white", edge: "#fcd34d" },
-  { dot: "bg-rose-400", text: "text-rose-700 dark:text-rose-300", border: "border-rose-300/80 dark:border-rose-800/80", hover: "hover:bg-rose-50/70 dark:hover:bg-rose-950/35", active: "bg-rose-500 border-rose-500 text-white", edge: "#fda4af" },
-  { dot: "bg-cyan-400", text: "text-cyan-700 dark:text-cyan-300", border: "border-cyan-300/80 dark:border-cyan-800/80", hover: "hover:bg-cyan-50/70 dark:hover:bg-cyan-950/35", active: "bg-cyan-500 border-cyan-500 text-white", edge: "#67e8f9" },
-  { dot: "bg-lime-400", text: "text-lime-700 dark:text-lime-300", border: "border-lime-300/80 dark:border-lime-800/80", hover: "hover:bg-lime-50/70 dark:hover:bg-lime-950/35", active: "bg-lime-500 border-lime-500 text-white", edge: "#bef264" },
-  { dot: "bg-fuchsia-400", text: "text-fuchsia-700 dark:text-fuchsia-300", border: "border-fuchsia-300/80 dark:border-fuchsia-800/80", hover: "hover:bg-fuchsia-50/70 dark:hover:bg-fuchsia-950/35", active: "bg-fuchsia-500 border-fuchsia-500 text-white", edge: "#f0abfc" },
-];
-
-function buildBranchStyleMap(nodes: TreeNode): Map<string, BranchStyle>;
-function buildBranchStyleMap(nodes: TreeNode[]): Map<string, BranchStyle>;
-function buildBranchStyleMap(nodes: TreeNode | TreeNode[]): Map<string, BranchStyle> {
-  const list = Array.isArray(nodes) ? nodes : [nodes];
-  const map = new Map<string, BranchStyle>();
-  let idx = 0;
-
-  for (const node of list) {
-    const branchRootId = node.branchRootId;
-    if (branchRootId === "ingest" || map.has(branchRootId)) continue;
-    map.set(branchRootId, pastelBranchStyles[idx % pastelBranchStyles.length]);
-    idx += 1;
+  const edges: Edge[] = [];
+  for (const n of allNodes) {
+    for (const child of n.children) {
+      edges.push({
+        id: `${n.id}->${child.id}`,
+        source: n.id,
+        target: child.id,
+        type: "smoothstep",
+        style: { stroke: branchStyleMap.get(child.branchRootId)?.edge ?? "hsl(var(--border))", strokeWidth: 2, strokeOpacity: 0.85 },
+        animated: false,
+      });
+    }
   }
 
-  return map;
+  return { nodes, edges };
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Custom node ───────────────────────────────────────────────────────────────
+
+function ScenarioNode({ data }: NodeProps & { data: NodeData }) {
+  const activeNodeId = useAtomValue(activeNodeIdAtom);
+  const compareNodeIds = useAtomValue(compareNodeIdsAtom);
+  const isActive = activeNodeId === data.op?.id;
+  const compareIdx = data.op ? compareNodeIds.indexOf(data.op.id) : -1;
+  const isInCompare = compareIdx !== -1;
+  const { branchStyle, isIngest } = data;
+
+  return (
+    <>
+      <Handle type="target" position={Position.Left} style={{ opacity: 0, pointerEvents: "none" }} />
+      <div
+        className={cn(
+          "w-full h-full rounded-xl border shadow-sm text-xs font-medium flex items-center gap-2 px-3 transition-all select-none",
+          isIngest
+            ? "bg-muted/50 border-border text-muted-foreground cursor-default"
+            : isInCompare
+            ? "bg-primary/10 border-primary text-foreground ring-1 ring-primary/40 cursor-pointer"
+            : isActive
+            ? (branchStyle?.active ?? "bg-primary border-primary text-primary-foreground")
+            : cn(
+                "bg-card text-card-foreground cursor-pointer",
+                branchStyle?.border ?? "border-border",
+                branchStyle?.hover ?? "hover:bg-muted/40",
+              ),
+        )}
+      >
+        {isInCompare ? (
+          <span className="h-4 w-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center shrink-0">
+            {compareIdx + 1}
+          </span>
+        ) : !isIngest ? (
+          <span className={cn("h-2.5 w-2.5 rounded-full shrink-0", branchStyle?.dot ?? "bg-primary", isActive && "bg-white/90")} />
+        ) : null}
+        {isIngest
+          ? <Database className="w-3.5 h-3.5 shrink-0" />
+          : <Save className={cn("w-3.5 h-3.5 shrink-0", !isActive && !isInCompare && (branchStyle?.text ?? "text-muted-foreground"))} />}
+        <span className="truncate flex-1 text-left">{data.label}</span>
+        {!isIngest && data.meta && (
+          <span className={cn("text-[10px] tabular-nums shrink-0", isActive ? "text-white/90" : "text-muted-foreground")}>
+            {data.meta}
+          </span>
+        )}
+      </div>
+      <Handle type="source" position={Position.Right} style={{ opacity: 0, pointerEvents: "none" }} />
+    </>
+  );
+}
+
+const nodeTypes = { scenarioNode: ScenarioNode };
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 type LoadState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; root: TreeNode; count: number };
+  | { status: "ready"; nodes: Node<NodeData>[]; edges: Edge[]; count: number };
 
 export function BottomRunTree() {
   const activeView = useAtomValue(activeViewAtom);
@@ -165,6 +219,8 @@ export function BottomRunTree() {
   const setActiveView = useSetAtom(activeViewAtom);
   const [compareNodeIds, setCompareNodeIds] = useAtom(compareNodeIdsAtom);
   const [loadState, setLoadState] = useState<LoadState>({ status: "idle" });
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node<NodeData>>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   const runId =
     activeView.type === "run" || activeView.type === "node"
@@ -178,16 +234,45 @@ export function BottomRunTree() {
     trpc.operations.getRunOperations.query({ runId })
       .then(({ operations }) => {
         if (cancelled) return;
-        const root = buildTree(operations);
-        const count = allNodes(root).filter((n) => n.id !== "ingest").length;
-        setLoadState({ status: "ready", root, count });
+        const root = buildLayoutTree(operations);
+        const { nodes: rfNodes, edges: rfEdges } = toReactFlow(root);
+        const count = allLayoutNodes(root).filter((n) => n.id !== "ingest").length;
+        setNodes(rfNodes);
+        setEdges(rfEdges);
+        setLoadState({ status: "ready", nodes: rfNodes, edges: rfEdges, count });
       })
       .catch((err) => {
         if (!cancelled)
           setLoadState({ status: "error", message: err instanceof Error ? err.message : "Failed." });
       });
     return () => { cancelled = true; };
-  }, [runId]);
+  }, [runId, setNodes, setEdges]);
+
+  const handleNodeClick = useCallback((_: React.MouseEvent, node: Node<NodeData>) => {
+    const { data } = node;
+    if (data.isIngest || !data.op) return;
+
+    const isMulti = (_ as React.MouseEvent).metaKey || (_ as React.MouseEvent).ctrlKey;
+    if (isMulti) {
+      setCompareNodeIds((prev) => {
+        if (prev.includes(data.op!.id)) return prev.filter((id) => id !== data.op!.id);
+        if (prev.length >= 3) return prev;
+        return [...prev, data.op!.id];
+      });
+      return;
+    }
+
+    setCompareNodeIds([]);
+    const toggling = activeNodeId === data.op.id;
+    setActiveNodeId(toggling ? null : data.op.id);
+    if (!toggling && activeView.type !== "home" && activeView.type !== "snapshot") {
+      const base = activeView as Extract<ActiveView, { runId: string }>;
+      setActiveView({ type: "node", clientId: base.clientId, snapshotId: base.snapshotId, runId: base.runId, nodeId: data.op.id });
+    } else if (toggling && activeView.type === "node") {
+      const base = activeView as Extract<ActiveView, { runId: string }>;
+      setActiveView({ type: "run", clientId: base.clientId, snapshotId: base.snapshotId, runId: base.runId });
+    }
+  }, [activeNodeId, activeView, setActiveNodeId, setActiveView, setCompareNodeIds]);
 
   if (!runId || loadState.status === "idle")
     return <Placeholder text="Select a run to view its history" />;
@@ -196,155 +281,42 @@ export function BottomRunTree() {
   if (loadState.status === "error")
     return <Placeholder text={loadState.message} error />;
 
-  const { root, count } = loadState;
-  const nodes = allNodes(root);
-  const branchStyleByRoot = buildBranchStyleMap(nodes);
+  const count = loadState.count;
 
-  // Canvas dimensions
-  const maxX = Math.max(...nodes.map((n) => n.lx)) + NW;
-  const maxY = Math.max(...nodes.map((n) => n.ly)) + NH / 2;
-  const totalW = maxX + PADDING * 2;
-  const totalH = maxY + PADDING;
+  if (count === 0)
+    return <Placeholder text="No saves recorded for this run yet" />;
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Header */}
       <div className="flex items-center gap-2 px-4 py-1.5 border-b border-border shrink-0">
         <Save className="w-3.5 h-3.5 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Run History</span>
         <span className="text-xs text-muted-foreground ml-auto">{count} save{count !== 1 ? "s" : ""}</span>
       </div>
-
-      {count === 0 ? (
-        <Placeholder text="No saves recorded for this run yet" />
-      ) : (
-        <div style={{ flex: 1, overflow: "auto" }}>
-          <div style={{ position: "relative", width: totalW, height: Math.max(totalH, 80) }}>
-
-            {/* SVG edges */}
-            <svg
-              style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-              width={totalW}
-              height={Math.max(totalH, 80)}
-            >
-              {nodes.map((node) =>
-                node.children.map((child) => {
-                  // parent right-center → child left-center
-                  const x1 = node.lx + PADDING + NW;
-                  const y1 = node.ly + PADDING;
-                  const x2 = child.lx + PADDING;
-                  const y2 = child.ly + PADDING;
-                  const mx = (x1 + x2) / 2;
-                  return (
-                    <path
-                      key={child.id}
-                      d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
-                      fill="none"
-                      stroke={branchStyleByRoot.get(child.branchRootId)?.edge ?? "hsl(var(--border))"}
-                      strokeOpacity={0.85}
-                      strokeWidth={2}
-                    />
-                  );
-                }),
-              )}
-            </svg>
-
-            {/* Nodes */}
-            {nodes.map((node) => {
-              const isActive = activeNodeId === node.id;
-              const compareIdx = compareNodeIds.indexOf(node.id);
-              const isInCompare = compareIdx !== -1;
-              const isIngest = node.id === "ingest";
-              const branchStyle = branchStyleByRoot.get(node.branchRootId) ?? null;
-              const left = node.lx + PADDING;
-              const top  = node.ly + PADDING - NH / 2;
-
-              function handleClick(e: React.MouseEvent) {
-                if (isIngest || !node.op) return;
-                const isMulti = e.metaKey || e.ctrlKey;
-
-                if (isMulti) {
-                  // Toggle this node in/out of compare set (max 3)
-                  setCompareNodeIds((prev) => {
-                    if (prev.includes(node.id)) return prev.filter((id) => id !== node.id);
-                    if (prev.length >= 3) return prev;
-                    return [...prev, node.id];
-                  });
-                  return;
-                }
-
-                // Regular click: clear compare set, single-select
-                setCompareNodeIds([]);
-                const toggling = isActive;
-                setActiveNodeId(toggling ? null : node.id);
-                if (!toggling && activeView.type !== "home" && activeView.type !== "snapshot") {
-                  const base = activeView as Extract<ActiveView, { runId: string }>;
-                  setActiveView({ type: "node", clientId: base.clientId, snapshotId: base.snapshotId, runId: base.runId, nodeId: node.id });
-                } else if (toggling && activeView.type === "node") {
-                  const base = activeView as Extract<ActiveView, { runId: string }>;
-                  setActiveView({ type: "run", clientId: base.clientId, snapshotId: base.snapshotId, runId: base.runId });
-                }
-              }
-
-              return (
-                <button
-                  key={node.id}
-                  disabled={isIngest}
-                  onClick={handleClick}
-                  style={{ position: "absolute", left, top, width: NW, height: NH }}
-                  className={cn(
-                    "rounded-xl border shadow-sm text-xs font-medium flex items-center gap-2 px-3 transition-all",
-                    isIngest
-                      ? "bg-muted/50 border-border text-muted-foreground cursor-default"
-                      : isInCompare
-                      ? "bg-primary/10 border-primary text-foreground ring-1 ring-primary/40 cursor-pointer"
-                      : isActive
-                      ? (branchStyle?.active ?? "bg-primary border-primary text-primary-foreground")
-                      : cn(
-                          "bg-card text-card-foreground cursor-pointer",
-                          branchStyle?.border ?? "border-border",
-                          branchStyle?.hover ?? "hover:bg-muted/40",
-                        ),
-                  )}
-                >
-                  {isInCompare ? (
-                    <span className="h-4 w-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center shrink-0">
-                      {compareIdx + 1}
-                    </span>
-                  ) : !isIngest ? (
-                    <span
-                      className={cn(
-                        "h-2.5 w-2.5 rounded-full shrink-0",
-                        branchStyle?.dot ?? "bg-primary",
-                        isActive && "bg-white/90",
-                      )}
-                    />
-                  ) : null}
-                  {isIngest
-                    ? <Database className="w-3.5 h-3.5 shrink-0" />
-                    : <Save className={cn("w-3.5 h-3.5 shrink-0", !isActive && !isInCompare && (branchStyle?.text ?? "text-muted-foreground"))} />}
-                  <span className="truncate flex-1 text-left">{node.label}</span>
-                  {!isIngest && (
-                    <span
-                      className={cn(
-                        "text-[10px] tabular-nums shrink-0",
-                        isActive ? "text-white/90" : "text-muted-foreground",
-                      )}
-                    >
-                      {node.meta}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={handleNodeClick}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2 }}
+          minZoom={0.3}
+          maxZoom={1.5}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={16} size={1} className="opacity-30" />
+          <Controls showInteractive={false} className="[&>button]:bg-background [&>button]:border-border [&>button]:text-foreground" />
+        </ReactFlow>
+      </div>
     </div>
   );
 }
-
-// ── Placeholder ───────────────────────────────────────────────────────────────
 
 function Placeholder({ text, loading, error }: { text: string; loading?: boolean; error?: boolean }) {
   return (

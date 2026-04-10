@@ -209,6 +209,11 @@ function buildSystemPrompt(workbookSheets: WorkbookSheetInput[]): string {
     "- Report addresses in standard Excel notation (e.g. B13:N22).",
     "- If a sheet has no meaningful inputs or outputs, omit it.",
     "",
+    "Header identification (IMPORTANT — used for diffing changes):",
+    "- row_header_address: if the value region has a column of text labels immediately to its left naming each row (e.g. 'Loss trend', 'ULAE loading', 'Premium'), set this to that label column's address (e.g. A2:A7).",
+    "- col_header_address: if the value region has a row of text labels immediately above it naming each column (e.g. accident years, line names), set this to that header row's address (e.g. B1:G1).",
+    "- Always populate whichever applies. For a vertical list of named assumptions (single column of values), row_header_address is almost always present.",
+    "",
     "## Workbook Sheets",
   ];
 

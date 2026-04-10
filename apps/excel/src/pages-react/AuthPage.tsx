@@ -1,82 +1,84 @@
-import { LoaderCircle } from "lucide-react";
-import { StepLayout } from "@/components/shell/step-layout";
-import { StatusBanner } from "@/components/shell/status-banner";
+import { LoaderCircle, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 export function AuthPage(props: {
-  apiUrl: string;
   email: string;
   password: string;
-  authSummary: string;
-  status: { kind: "ok" | "error"; message: string } | null;
   loggingIn: boolean;
   canLogout: boolean;
-  onApiUrlChange: (value: string) => void;
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onLogin: () => Promise<void> | void;
   onLogout: () => Promise<void> | void;
-  onTestConnection: () => Promise<void> | void;
 }) {
   return (
-    <StepLayout
-      stepLabel="Step 1 of 3"
-      title="Pactolus Assistant"
-      subtitle="Sign in first. Then select snapshot and run."
-    >
-      <StatusBanner status={props.status} />
-      <Card>
-        <CardHeader>
-          <CardTitle>Sign in</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-1">
-            <label className="text-xs text-slate-600">API URL</label>
-            <Input value={props.apiUrl} onChange={(e) => props.onApiUrlChange(e.target.value)} />
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6">
+      <div className="w-full max-w-xs flex flex-col gap-6">
+
+        {/* Brand */}
+        <div className="flex flex-col items-center gap-1 text-center">
+          <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center mb-1">
+            <span className="text-primary-foreground font-bold text-lg">P</span>
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-slate-600">Email</label>
+          <h1 className="text-base font-semibold text-foreground">Pactolus</h1>
+          <p className="text-xs text-muted-foreground">Sign in to your account</p>
+        </div>
+
+        {/* Form */}
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-foreground">Email</label>
             <Input
               value={props.email}
               type="email"
+              autoComplete="email"
+              placeholder="you@company.com"
               onChange={(e) => props.onEmailChange(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && props.onLogin()}
             />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-slate-600">Password</label>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-foreground">Password</label>
             <Input
               value={props.password}
               type="password"
+              autoComplete="current-password"
+              placeholder="••••••••"
               onChange={(e) => props.onPasswordChange(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && props.onLogin()}
             />
           </div>
-          <div className="flex gap-2">
-            <Button
-              className="flex-1"
-              onClick={props.onLogin}
-              disabled={props.loggingIn}
-            >
-              {props.loggingIn ? (
-                <span className="flex items-center gap-2">
-                  <LoaderCircle className="size-4 animate-spin" />
-                  Logging in...
-                </span>
-              ) : (
-                "Login"
-              )}
-            </Button>
-            <Button variant="outline" onClick={props.onTestConnection} disabled={props.loggingIn}>
-              Test connection
-            </Button>
-            <Button variant="secondary" onClick={props.onLogout} disabled={!props.canLogout}>
-              Logout
-            </Button>
-          </div>
-          <p className="text-xs text-slate-600">{props.authSummary}</p>
-        </CardContent>
-      </Card>
-    </StepLayout>
+
+          <Button
+            className="w-full mt-1"
+            onClick={props.onLogin}
+            disabled={props.loggingIn || !props.email.trim() || !props.password.trim()}
+          >
+            {props.loggingIn ? (
+              <>
+                <LoaderCircle className="size-3.5 animate-spin" />
+                Signing in…
+              </>
+            ) : (
+              "Sign in"
+            )}
+          </Button>
+        </div>
+
+        {/* Logout — only visible when a session exists */}
+        {props.canLogout && (
+          <button
+            type="button"
+            onClick={props.onLogout}
+            className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto"
+          >
+            <LogOut className="size-3" />
+            Sign out of current session
+          </button>
+        )}
+
+      </div>
+    </div>
   );
 }

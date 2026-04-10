@@ -8,6 +8,7 @@ export function NodeDetailView(props: {
   loading: boolean;
   note?: ViewerNote;
   actions?: React.ReactNode;
+  headerAction?: React.ReactNode;
   emptyMessage?: string;
   icons?: ViewerIconSet;
   compact?: boolean;
@@ -30,6 +31,7 @@ export function NodeDetailView(props: {
               <h2 className="font-semibold text-sm text-foreground leading-tight">{props.node.label}</h2>
               <p className="text-xs text-muted-foreground mt-0.5">{typeLabel(props.node.type)}</p>
             </div>
+            {props.headerAction && <div className="shrink-0">{props.headerAction}</div>}
           </div>
         ) : (
           <div className="h-10 bg-muted/50 rounded-md animate-pulse" />
@@ -169,11 +171,14 @@ function NarrowInline(props: { region: ViewerRegion; accentText: string; expandI
   const [expanded, setExpanded] = useState(false);
   const cellRef = `${props.region.sheetName ? `${props.region.sheetName}!` : ""}${props.region.address}`;
   const count = props.region.values.flat().filter((value) => value !== null && value !== undefined && value !== "").length;
+  const hasRowHeaders = props.region.rowHeaders && props.region.rowHeaders.some((h) => h !== "");
+  const hasColHeaders = props.region.colHeaders && props.region.colHeaders.some((h) => h);
   const flat = props.region.values.flatMap((row, rowIndex) =>
     row
       .filter((value) => value !== null && value !== undefined && value !== "")
       .map((value, colIndex) => ({
-        label: props.region.rowHeaders?.[rowIndex] ?? props.region.colHeaders?.[colIndex] ?? null,
+        rowLabel: props.region.rowHeaders?.[rowIndex] ?? null,
+        colLabel: props.region.colHeaders?.[colIndex] ?? null,
         value: formatCellVal(value),
       })),
   );
@@ -189,7 +194,7 @@ function NarrowInline(props: { region: ViewerRegion; accentText: string; expandI
           {props.region.description ?? props.region.reason ?? cellRef}
         </p>
         <div className="flex items-center justify-between gap-1">
-        <p className={cx("text-[10px] font-mono truncate", props.accentText)}>{cellRef}</p>
+          <p className={cx("text-[10px] font-mono truncate", props.accentText)}>{cellRef}</p>
           <div className="flex items-center gap-1 shrink-0">
             <span className="text-[10px] text-muted-foreground">{count} value{count !== 1 ? "s" : ""}</span>
             <span className={cx("text-[10px] text-muted-foreground transition-transform inline-block", expanded && "rotate-180")}>
@@ -199,14 +204,43 @@ function NarrowInline(props: { region: ViewerRegion; accentText: string; expandI
         </div>
       </button>
       {expanded && (
-        <div className="border-t border-border px-3 py-2 flex flex-wrap gap-1">
-          {flat.map((item, index) => (
-            <div key={index} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 border border-border/50">
-              {item.label && <span className="text-muted-foreground text-[9px] max-w-[60px] truncate">{item.label}</span>}
-              {item.label && <span className="text-muted-foreground/40 text-[8px]">.</span>}
-              <span className="font-medium tabular-nums text-[10px]">{item.value}</span>
+        <div className="border-t border-border">
+          {hasRowHeaders ? (
+            <div className="divide-y divide-border/50">
+              {props.region.values.map((row, rowIndex) => {
+                const nonEmpty = row.filter((v) => v !== null && v !== undefined && v !== "");
+                if (!nonEmpty.length) return null;
+                const rowLabel = props.region.rowHeaders?.[rowIndex];
+                return (
+                  <div key={rowIndex} className="flex items-center justify-between gap-3 px-3 py-1.5 hover:bg-muted/20">
+                    <span className="text-muted-foreground text-[10px] leading-tight min-w-0 truncate">
+                      {rowLabel ?? `Row ${rowIndex + 1}`}
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {nonEmpty.map((v, i) => (
+                        <span key={i} className="font-semibold tabular-nums text-[11px] text-foreground">
+                          {hasColHeaders && props.region.colHeaders?.[i] ? (
+                            <span className="text-muted-foreground font-normal text-[9px] mr-0.5">{props.region.colHeaders[i]}</span>
+                          ) : null}
+                          {formatCellVal(v)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          ) : (
+            <div className="px-3 py-2 flex flex-wrap gap-1">
+              {flat.map((item, index) => (
+                <div key={index} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 border border-border/50">
+                  {item.colLabel && <span className="text-muted-foreground text-[9px]">{item.colLabel}</span>}
+                  {item.colLabel && <span className="text-muted-foreground/40 text-[8px]">·</span>}
+                  <span className="font-medium tabular-nums text-[10px]">{item.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

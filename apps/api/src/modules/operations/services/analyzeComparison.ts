@@ -22,6 +22,8 @@ type RegionEntry = {
   regionType: "input" | "output";
   description?: string;
   reason?: string;
+  rowHeaders?: string[];
+  colHeaders?: string[];
   values: unknown[][];
 };
 
@@ -83,7 +85,13 @@ export async function analyzeComparison(
   // Build diff: regions where values differ across ops
   const regionMap = new Map<
     string,
-    { reason?: string; type: "input" | "output"; vals: (unknown[][] | null)[] }
+    {
+      reason?: string;
+      type: "input" | "output";
+      rowHeaders?: string[];
+      colHeaders?: string[];
+      vals: (unknown[][] | null)[];
+    }
   >();
 
   regionsByOp.forEach((regions, i) => {
@@ -93,6 +101,8 @@ export async function analyzeComparison(
         regionMap.set(key, {
           reason: r.description ?? r.reason,
           type: r.regionType,
+          rowHeaders: r.rowHeaders,
+          colHeaders: r.colHeaders,
           vals: Array(opIds.length).fill(null),
         });
       }
@@ -109,12 +119,37 @@ export async function analyzeComparison(
     const serialized = data.vals.map((v) => (v ? JSON.stringify(v) : null));
     if (serialized.every((s) => s === serialized[0])) continue;
 
+    // If the region has row headers, diff row-by-row so we can name each changed parameter.
+    // This handles the common case of a single-column input table (e.g. Loss trend, ULAE loading…)
+    // where only one row changed but the whole region is captured as one block.
+    const rowHeaders = data.rowHeaders;
+    if (rowHeaders && rowHeaders.some((h) => h !== "")) {
+      const rowCount = Math.max(...present.map((v) => v!.length));
+      let rowDiffFound = false;
+      for (let row = 0; row < rowCount; row++) {
+        const rowVals = data.vals.map((v) => (v ? v[row] ?? null : null));
+        if (rowVals.map((rv) => JSON.stringify(rv)).every((s, _, arr) => s === arr[0])) continue;
+
+        rowDiffFound = true;
+        const rowLabel = rowHeaders[row] || `Row ${row + 1}`;
+        const regionLabel = data.reason ? `${data.reason} — ${rowLabel}` : rowLabel;
+        const valStr = rowVals
+          .map((rv, i) => (rv !== null ? `${nodeLabels[i]}: ${formatValue([rv as unknown[]])}` : null))
+          .filter(Boolean)
+          .join(" → ");
+        const line = `${regionLabel}: ${valStr}`;
+        if (data.type === "input") inputDiffs.push(line);
+        else outputDiffs.push(line);
+      }
+      if (rowDiffFound) continue;
+    }
+
+    // Fallback: treat the whole region as one diff entry
     const label = data.reason ?? "Unknown region";
     const valStr = data.vals
       .map((v, i) => (v !== null ? `${nodeLabels[i]}: ${formatValue(v)}` : null))
       .filter(Boolean)
-      .join(" | ");
-
+      .join(" → ");
     const line = `${label}: ${valStr}`;
     if (data.type === "input") inputDiffs.push(line);
     else outputDiffs.push(line);

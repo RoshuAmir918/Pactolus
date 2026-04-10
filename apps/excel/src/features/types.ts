@@ -26,6 +26,7 @@ export type RunOption = {
   status: string;
   createdByName: string;
   createdAt: Date;
+  nodeCount: number;
 };
 
 export type ClientOption = {

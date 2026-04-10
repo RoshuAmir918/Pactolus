@@ -13,6 +13,8 @@ type RegionEntry = {
   regionType: "input" | "output";
   description?: string;
   reason?: string;
+  rowHeaders?: string[];
+  colHeaders?: string[];
   values: unknown[][];
 };
 
@@ -25,6 +27,7 @@ type NodeInfo = {
 type DiffRow = {
   key: string;
   reason: string;
+  regionLabel?: string; // parent region name, shown as subtitle when drilling into row-level
   type: "input" | "output";
   vals: (string | null)[];
 };
@@ -98,7 +101,7 @@ export function NodeComparePanel({ runId, operationIds, onClear }: Props) {
       // Build diff map keyed by sheet|address
       const regionMap = new Map<
         string,
-        { reason: string; type: "input" | "output"; vals: (unknown[][] | null)[] }
+        { reason: string; type: "input" | "output"; rowHeaders?: string[]; vals: (unknown[][] | null)[] }
       >();
 
       regionsByOp.forEach((regions, i) => {
@@ -108,6 +111,7 @@ export function NodeComparePanel({ runId, operationIds, onClear }: Props) {
             regionMap.set(key, {
               reason: r.description ?? r.reason ?? `${r.sheetName ? `${r.sheetName}!` : ""}${r.address}`,
               type: r.regionType,
+              rowHeaders: r.rowHeaders,
               vals: Array(operationIds.length).fill(null),
             });
           }
@@ -117,11 +121,33 @@ export function NodeComparePanel({ runId, operationIds, onClear }: Props) {
 
       const diffRows: DiffRow[] = [];
       for (const [key, data] of regionMap) {
-        if (data.vals.filter((v) => v !== null).length < 2) continue;
+        const present = data.vals.filter((v) => v !== null);
+        if (present.length < 2) continue;
         const serialized = data.vals.map((v) => (v !== null ? JSON.stringify(v) : null));
         const nonNull = serialized.filter(Boolean);
         if (nonNull.every((s) => s === nonNull[0])) continue;
 
+        // Row-level diff only when we have real labels (not just empty strings from unresolved merges)
+        const rowHeaders = data.rowHeaders;
+        if (rowHeaders && rowHeaders.some((h) => h !== "")) {
+          const rowCount = Math.max(...(present as unknown[][][]).map((v) => v.length));
+          let anyRowDiff = false;
+          for (let row = 0; row < rowCount; row++) {
+            const rowVals = data.vals.map((v) => (v ? (v as unknown[][])[row] ?? null : null));
+            if (rowVals.map((rv) => JSON.stringify(rv)).every((s, _, arr) => s === arr[0])) continue;
+            anyRowDiff = true;
+            diffRows.push({
+              key: `${key}|row${row}`,
+              reason: rowHeaders[row] || `Row ${row + 1}`,
+              regionLabel: data.reason,
+              type: data.type,
+              vals: rowVals.map((rv) => (rv !== null ? formatVal([rv as unknown[]]) : null)),
+            });
+          }
+          if (anyRowDiff) continue;
+        }
+
+        // Fallback: whole-region as one row
         diffRows.push({
           key,
           reason: data.reason,
@@ -311,7 +337,12 @@ function DiffTable({
           <tbody className="divide-y divide-border">
             {rows.map((row) => (
               <tr key={row.key} className="hover:bg-muted/20">
-                <td className="px-3 py-2 text-foreground font-medium">{row.reason}</td>
+                <td className="px-3 py-2">
+                  <div className="font-medium text-foreground leading-tight">{row.reason}</div>
+                  {row.regionLabel && (
+                    <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{row.regionLabel}</div>
+                  )}
+                </td>
                 {row.vals.map((v, i) => (
                   <td
                     key={i}

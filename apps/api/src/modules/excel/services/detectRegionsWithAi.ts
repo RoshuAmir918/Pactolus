@@ -19,6 +19,8 @@ export type DetectRegionsWithAiResult = {
     userConfirmed: boolean;
     reason?: string;
     evidence?: string[];
+    rowHeaderAddress?: string;   // e.g. "A2:A7" — column of labels to the left of the values
+    colHeaderAddress?: string;   // e.g. "B1:G1" — row of labels above the values
   }>;
 };
 
@@ -52,14 +54,21 @@ function buildPrompt(input: DetectRegionsWithAiInput): string {
     outputSchema: {
       candidates: [
         {
-          address: "A1:C10",
+          address: "B2:B7",
           regionType: "input|output",
           confidencePercent: 0,
           reason: "short explanation",
           evidence: ["header_keyword", "table_shape", "numeric_density"],
+          rowHeaderAddress: "A2:A7",
+          colHeaderAddress: "B1:G1",
         },
       ],
     },
+    headerInstructions: [
+      "rowHeaderAddress: if the region has a column of text labels immediately to its left (e.g. 'Loss trend', 'ULAE loading'), set this to that label column's address.",
+      "colHeaderAddress: if the region has a row of text labels immediately above it (e.g. column names or dates), set this to that label row's address.",
+      "Set only the one that applies. Both may be null if no labels are adjacent.",
+    ],
   });
 }
 
@@ -143,18 +152,21 @@ function normalizeAiResponse(raw: unknown, maxRegionsPerType: number): DetectReg
         ? evidenceValue.filter((v): v is string => typeof v === "string")
         : undefined;
 
+      const rowHeaderAddress = (item as { rowHeaderAddress?: unknown }).rowHeaderAddress;
+      const colHeaderAddress = (item as { colHeaderAddress?: unknown }).colHeaderAddress;
+
       const candidate: RegionCandidate = {
         address,
         regionType: regionType as "input" | "output",
         confidencePercent: clampPercent(confidencePercent),
         userConfirmed: false,
       };
-      if (reason) {
-        candidate.reason = reason;
-      }
-      if (evidence && evidence.length > 0) {
-        candidate.evidence = evidence;
-      }
+      if (reason) candidate.reason = reason;
+      if (evidence && evidence.length > 0) candidate.evidence = evidence;
+      if (typeof rowHeaderAddress === "string" && rowHeaderAddress.trim())
+        candidate.rowHeaderAddress = rowHeaderAddress.trim();
+      if (typeof colHeaderAddress === "string" && colHeaderAddress.trim())
+        candidate.colHeaderAddress = colHeaderAddress.trim();
       return candidate;
     })
     .filter((candidate): candidate is RegionCandidate => candidate !== null);

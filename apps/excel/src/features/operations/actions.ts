@@ -29,9 +29,9 @@ export async function appendOperationIfActive(input: {
 }
 
 export function toRunOptions(
-  runs: Array<{ id: string; name: string; status: string; createdByName: string; createdAt: Date }>,
+  runs: Array<{ id: string; name: string; status: string; createdByName: string; createdAt: Date; nodeCount: number }>,
 ): RunOption[] {
-  return runs.map((r) => ({ id: r.id, name: r.name, status: r.status, createdByName: r.createdByName, createdAt: r.createdAt }));
+  return runs.map((r) => ({ id: r.id, name: r.name, status: r.status, createdByName: r.createdByName, createdAt: r.createdAt, nodeCount: r.nodeCount }));
 }
 
 export function emptyRunSession(): RunSession {

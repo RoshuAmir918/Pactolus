@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { JotaiProvider } from "@/providers/jotai-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
 import "./globals.css";
+import "@xyflow/react/dist/style.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

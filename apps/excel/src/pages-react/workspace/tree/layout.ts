@@ -3,8 +3,8 @@ import type { NodeTone, TreeNode } from "../types";
 
 export const NW = 132;
 export const NH = 40;
-export const HGAP = 14;
-export const VGAP = 56;
+export const HGAP = 24;
+export const VGAP = 80;
 export const PADDING = 16;
 
 export function subtreeW(node: TreeNode): number {

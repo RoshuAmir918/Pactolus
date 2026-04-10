@@ -1,7 +1,7 @@
 import { loadSnapshotSheets, loadSnapshotTriangles, loadRunContext, loadFocusedNode } from "./loadContext";
 import { buildSystemPrompt } from "./systemPrompt";
 import { callAnthropic, CHAT_TOOLS } from "./anthropicClient";
-import { resolveSource } from "./resolveSource";
+import { handleToolUse } from "./handleToolUse";
 
 export type SendMessageInput = {
   orgId: string;
@@ -73,35 +73,8 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
 
     currentMessages = [...currentMessages, { role: "assistant" as const, content }];
 
-    const toolResults: unknown[] = [];
-    for (const toolBlock of toolUseBlocks) {
-      if (toolBlock.name === "write_to_excel") {
-        const ti = toolBlock.input as { start_cell: string; values: unknown[][]; sheet_name?: string; description: string };
-        pendingExcelAction = {
-          type: "write_range",
-          startCell: ti.start_cell,
-          values: ti.values,
-          sheetName: ti.sheet_name,
-          description: ti.description,
-        };
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: toolBlock.id,
-          content: "Data staged. A Paste button will appear in the chat. Tell the user to click it.",
-        });
-      } else if (toolBlock.name === "fetch_source") {
-        const ti = toolBlock.input as { source_type: string; source_id: string; reason: string };
-        const fetched = await resolveSource(ti.source_type, ti.source_id, input.orgId);
-        toolResults.push({ type: "tool_result", tool_use_id: toolBlock.id, content: fetched });
-      } else {
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: toolBlock.id,
-          content: `Unknown tool: ${toolBlock.name}`,
-          is_error: true,
-        });
-      }
-    }
+    const { toolResults, excelAction } = await handleToolUse(toolUseBlocks, input.orgId);
+    if (excelAction) pendingExcelAction = excelAction;
 
     currentMessages = [...currentMessages, { role: "user" as const, content: toolResults }];
   }

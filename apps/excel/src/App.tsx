@@ -641,19 +641,14 @@ export default function App() {
   if (currentPage === "auth") {
     return (
       <AuthPage
-        apiUrl={apiUrl}
         email={email}
         password={password}
-        authSummary={authSummary}
-        status={status}
         loggingIn={isBusy}
         canLogout={authenticated}
-        onApiUrlChange={setApiUrl}
         onEmailChange={setEmail}
         onPasswordChange={setPassword}
         onLogin={onLogin}
         onLogout={onLogout}
-        onTestConnection={onTestConnection}
       />
     );
   }
